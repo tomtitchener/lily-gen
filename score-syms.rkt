@@ -55,6 +55,7 @@
 
 (define (octave? o) (and (symbol? o) (member o octave-syms)))
 
+
 (define duration-syms
  '(W.  W
    H.  H
@@ -188,7 +189,3 @@
     Minor))
 
 (define (mode? m) (and (symbol? m) (member m mode-syms)))
-
-
-
-

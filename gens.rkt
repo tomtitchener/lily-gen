@@ -1,75 +1,62 @@
 #lang racket
 
-;; Experimental
+;; Generators
 
-(require "utils.rkt")
-(require "scale.rkt")
+(require racket/generator)
 (require "score.rkt")
-(require "score-syms.rkt")
-(require (only-in "lily-utils.rkt" duration->int))
-(require srfi/1)
-(require (only-in algorithms repeat))
+
+(provide (all-defined-out))
+
+(define/contract (cycle-generator lst [start 0])
+  (->* ((listof any/c)) (exact-nonnegative-integer?) generator?)
+  (let ([i start]
+        [l (length lst)])
+    (infinite-generator
+     (yield (list-ref lst (remainder i l)))
+     (set! i (add1 i)))))
+
+(define/contract (generator-done? gen)
+  (-> generator? boolean?)
+  (symbol=? 'done (generator-state gen)))
+
+(define/contract (generate-while pred gen)
+  (-> predicate/c generator? (listof any/c))
+  (let loop ()
+    (let ([next (gen)])
+      (if (pred next)
+          (cons next (loop))
+          '()))))
+
+;; answers Note? or Rest? for length of shortest generator, then void to mark generator state 'done,
+;; infinite if all generators are infinite
+(define/contract (note-or-rest-gen pitch-or-f-gen durations-gen accent-or-f-gen)
+  (-> generator? generator? generator? generator?)
+  (infinite-generator
+   (let ([pitch-or-f  (pitch-or-f-gen)]
+         [duration    (durations-gen)]
+         [accent-or-f (accent-or-f-gen)])
+     (when (ormap generator-done? (list pitch-or-f-gen durations-gen accent-or-f-gen))
+       void)
+     (if pitch-or-f
+         (let ([pitch    (car pitch-or-f)]
+               [octave   (cdr pitch-or-f)]
+               [controls (if accent-or-f (list accent-or-f) '())])
+           (yield (Note pitch octave duration controls #f)))
+         (yield (Rest duration))))))
 
 #|
+(define pitch-or-f-gen  (cycle-generator (list (cons 'C '0va) #f (cons 'E '0va))))
+(define duration-gen    (cycle-generator '(E S S E S S)))
+(define accent-or-f-gen (cycle-generator '(Accent #f #f)))
+(define note-or-rest-gen (note-or-rest-gen pitch-or-f-gen duration-gen accent-or-f-gen))
+(define sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int note-or-rest-gen))
+(define note-or-rests (generate-while note-or-rest-gen 
+|#
 
-Example texture using runs or patterns of consecutive intervals using indices
-mapped into scales, octave pitch pairs across series of scales, matched with
-list of repeated durations to generate simple notes.
-
-For diatonic scales, with seven notes, index range given count of octaves
-is from 0 to 55 (are outer two octaves too ugly to listen to?):
-
-scale.rkt> (idx->pitch C-major 0)
-'(C . 29vb)
-scale.rkt> (idx->pitch C-major 55)
-'(B . 22va)
-
-Note these indices are normalized by C octave ranges:
-
-scale.rkt> (idx->pitch B-major 0)
-'(Cs . 29vb)
-scale.rkt> (idx->pitch B-major 55)
-'(B . 22va)
-
-The bottom and top indices are the scale pitches closest to C and B enharmonically:
-
-scale.rkt> (idx->pitch Dff-major 0)
-'(Dff . 29vb)
-scale.rkt> (idx->pitch Dff-major 55)
-'(Cf . 22va)
-
-If you split a range between two scales, you get successive scale degrees (range is half-open):
-
-scale.rkt> (list (map ((curry idx->pitch) A-major) (range 0 5)) (map ((curry idx->pitch) Af-major) (range 5 10)))
-'(((Cs . 29vb) (D . 29vb) (E . 29vb) (Fs . 29vb) (Gs . 29vb))
-  ((Af . 29vb) (Bf . 29vb) (C . 22vb) (Df . 22vb) (Ef . 22vb)))
-
-Piano range is three octaves below middle C and four octaves above middle C for a total of 7 octaves,
-plus a couple pitches on the low end down to the A below C.  Octave range from 29vb to 22va is an eight
-octave range.  The confusing thing is the default, no-annotation octave for Lilypond is the octave below
-middle C.  So the eight symbols denote the range that corresponds to the four octaves below middle C and
-the four octaves above middle C.  The ordinary piano keyboard cuts that bottom octave at the low A, and
-in fact the tonal quality in the lowest and highest octaves is diminished, from very soft hardly audible
-on the low end to piercing and shrill on the high end, at least for the synth instruments that currently
-interest me.
-
-If I limit myself to five sharps up and five flats down, I have for choice of keys the range
-Df Af Ef Bf F C G D A E B for a total of 11.  So to enumerate I have a space of 56 pitches low 
-to high by 11 keys flat to sharp or a total of 616 points in a cartesian plane, though the
-range of keys could be enumerated by intervals other than a fifth, say a fourth or a third.
-
-Or that's one way of thinking of things.  Without organization of pitches by affinity, accent,
-reptition or some other emphasis, a given diatonic scale could be heard as major, minor or any
-of the modal scales.  
-
-My starting point was a texture of overlapping ascending, mainly stepwise motifs, with voices joining
-in a choir to generate a sustained texture.  The motifs would start in mid-low range, in the second
-octave below middle C, with longer durations starting with small runs of four or five notes, hopping
-up or down a second, third, or fourth from the ending pitch to start the next run, gradually getting
-shorter/faster and including more notes in a run, extending the range for a given run.
-
-Or something like that.  A first step would be just to have a generator with some random behavior
-built into it that I could parameterize, and get fancier as I go along.
+#|
+;;;;;;;;;;;;;;;;;
+;;; GRAVEYARD ;;;
+;;;;;;;;;;;;;;;;;
 
 Re: random subsystem in Racket.  Want to use (random-seed (current-milliseconds)) to get started.
 For recreating same number stream in a new score, save (current-milliseconds) via number->string
@@ -95,25 +82,6 @@ and a duration to produce a Note, leaving an empty list for controls and #f for 
 That'll be inside a generator that producess a list of them which together form the second input to
 the SplitStaffVoice constructor.
 
-|#
-
-;; A simple pitch range into a list of notes of equal duration, no rests.
-(define/contract (note-range scale duration pitch start stop [step 1])
-  (->* (Scale? duration? pitch/c integer? integer?) (integer?) (listof Note?))
-  (let ([pitches (transpose/absolute scale pitch (range start stop step))])
-    (map (lambda (p) (Note (car p) (cdr p) duration '() #f)) pitches)))
-
-(define/contract (inverted-note-ranges scale duration pitch start stop [step 1])
-  (->* (Scale? duration? pitch/c integer? integer?) (integer?) (listof Note?))
-  (let ([beginning (note-range scale duration pitch start stop step)]
-        [ending    (note-range scale duration pitch stop start (- step))])
-    (append beginning ending)))
-
-
-(define/contract (repeat-list n lst)
-  (-> exact-nonnegative-integer? list? list?)
-  (apply append (repeat n lst)))
-
 (define ascending-thirds (repeat-list 10 (note-range C-major 'S. (cons 'C '0va) -9 15 2)))
 
 (define ascending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-thirds))
@@ -121,13 +89,12 @@ the SplitStaffVoice constructor.
 (define ascending-descending-thirds (repeat-list 10 (inverted-note-ranges D-major 'S (cons 'D '8vb) -7 18 2)))
 
 (define ascending-descending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-descending-thirds))
-
 (define voices-group (VoicesGroup
                       (TempoDur 'Q 120)
                       (TimeSignatureSimple 3 'Q)
                       (list ascending-thirds-voice ascending-descending-thirds-voice)))
 
-(define simple-score (Score "simple" "" (list voices-group)))
+ (define simple-score (Score "simple" "" (list voices-group)))
 
 ;; works but only if that last remainder duration in 128th notes exactly equals one of the duration-vals
 ;; note the resolution doesn't go down to a single 128th note, stopping at 4, which is a 32nd note
@@ -221,7 +188,6 @@ the SplitStaffVoice constructor.
   (lambda (totval curval durval mpit mdyn)
     (if mpit macc #f)))
 
-#|
 (define note-tuples (note-tuple-gen 128 (gen-mono-durval-gen 'S) (gen-alt-mpit-gen (cons 'C '0va)) (gen-mono-mdyn-gen 'Forte) (gen-mono-macc-gen 'Accent)))
 runs.rkt> note-tuples
 '((#f 8 ())
@@ -240,187 +206,72 @@ runs.rkt> note-tuples
   ((C . 0va) 8 (Forte Accent))
   (#f 8 ())
   ((C . 0va) 8 (Forte Accent)))
-|#
 
+May work, but seems like overkill, and omitting time signature is an mistake.
+More intuitive to have a generator that creates a note or a rest based on some window of the past note-or-rests.
+That's because you wouldn't make decisions like reversing the direction of a series of pitches if you didn't know
+the overall trend, or maybe also where the change falls with respect to beats in the bar.
+And similarly to choose when to add a rest or what the next duration should be.
+Recall earlier scheme code where I interpreted ratios to create buckets of probabilities and the random number
+generator to pick from a weighted distribution of x possible choices.
+Or where I used a sliding window to get a sense of the trend in a recent list of events like intervals and used
+the result to bias the random selection based on history.
 
-#|
-;;;;;;;;;;;;;;;;;
-;;; Graveyard ;;;
-;;;;;;;;;;;;;;;;;
-;; note that successive generators could pick up on the
-;; values generated so far, so for the duration generator,
-;; it'd just know about the overall total and the total
-;; so far,
-;; then the pitch generator would know about those two
-;; totals plus the current duration,
-;; and the dynamic generator would add the current pitch,
-;; and the accent generator would add the current dynamic
+Also, to separate concerns, make the generator like a let-lambda that binds state over a routine that outputs just
+the next iota and have the caller determine when to stop, unlike above where total duration bounds the output list.
 
-;; put the dynamic generator last?
-;; remember pitch, dynamic, and accent could be #f
+To carry over what I was doing with Haskell I could start with a pattern generator that took lists of components and
+answered a stream of note-or-rests by cycling through each.  Which could be subsumed in a parent generator that took
+the same list of components and created n child generators by rotating the lists to emit a list of n note-or-rests,
+one per voice that the caller would terminate by some criteria like total lengths reaching a threshold, maybe catching
+up slower voices until the get close to the first.
 
-(define/contract (note-gen total-dur dur-gen pitch-gen dyn-gen acc-gen)
-  (-> exact-positive-integer?
-      (-> exact-positive-integer? exact-nonnegative-integer? duration?)
-      (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c))
-      (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c) (or/c #f dynamic?))
-      (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c) (or/c #f dynamic?) (or/c #f accent?))
-      (listof Note?))
-  (let inner ([ret '()]
-              [cur-dur 0])
-    (if (>= cur-dur total-dur)
-        (reverse ret)
-        (let* ([next-dur   (dur-gen total-dur cur-dur)]
-               [next-pit   (pitch-gen total-dur cur-dur next-dur)]
-               [next-dyn   (dyn-gen total-dur cur-dur next-dur next-pit)]
-               [next-acc   (acc-gen total-dur cur-dur next-dur next-pit next-dyn)]
-               [next-ctrls (append (if next-dyn (list next-dyn) '()) (if next-acc (list next-acc) '()))]
-               [next-note (if next-pit
-                              (Note (car next-pit) (cdr next-pit) next-dur next-ctrls #f)
-                              (Rest next-dur next-ctrls))]
-               [next-ret (cons next-note ret)])
-          (inner next-ret (+ cur-dur (duration->int next-dur)))))))
+Then maybe I could add some randomization to perturb the next-notes by e.g. a random interval from an input list.
 
-(define/contract (gen-mono-dur-gen dur)
-  (-> duration? (-> exact-positive-integer? exact-nonnegative-integer? duration?))
-  (lambda (tot cur)
-    (when (< tot cur)
-        (error 'mono-dur "invalid input, tot ~e < cur ~e" tot cur))
-    (let ([rem (- tot cur)])
-      (if (< rem (duration->int dur)) (int->duration rem) dur))))
+After that I could start thinking about sliding windows for ascend/descend and rhythms that play off the meter.
 
-(define/contract (gen-mono-pit-gen pit)
-  (-> pitch/c (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c)))
-  (lambda (tot cur dur)
-    pit))
+;; sample
+(define/contract (gen-from-cycles pitch/rests-cycle durations-cycle accent/fs-cycle)
+  (-> (-> symbol? (or/c (or/c pitch/c #f) void?))
+      (-> symbol? (or/c duration? void?))
+      (-> symbol? (or/c (or/c accent? #f) void?))
+      (-> symbol? (or/c (or/c Note? Rest?) void?)))
+  (lambda (cmd)
+    (let inner ([c cmd])
+      (case c
+        ['val  (let* ([next-pitch/rest (pitch/rests-cycle c)]
+                      [next-duration   (durations-cycle c)]
+                      [next-accent/f   (accent/fs-cycle c)]
+                      [next-controls   (if next-accent/f (list next-accent/f) '())])
+                 (if next-pitch/rest
+                     (let ([pitch (car next-pitch/rest)]
+                           [octave (cdr next-pitch/rest)])
+                       (Note pitch octave next-duration next-controls #f))
+                     (Rest next-duration)))]
+        ['inc  (begin
+                 (pitch/rests-cycle c)
+                 (durations-cycle c)
+                 (accent/fs-cycle c))]
+        ['val+ (let ([val (inner 'val)])
+                 (inner 'inc)
+                 val)]))))
 
-(define/contract (gen-mono-dyn-gen dyn)
-  (-> dynamic? (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c) (or/c #f dynamic?)))
-  (lambda (tot cur dur pit)
-    #f))
+;; create a thunk from a list and an optional starting index with two commands
+;; * 'val answers list-ref of remainder of current index and list length, answers any/c
+;; * 'inc increments index and answers void?
+;; mutable state: index advances per each 'inc infinitely
+(define/contract (make-cycle-proto lst [start 0])
+  (->* ((listof any/c)) (exact-nonnegative-integer?) (-> symbol? (or/c any/c void?)))
+  (let ([i start]
+        [l (length lst)])
+    (lambda (cmd)
+      (case cmd
+        ['val  (list-ref lst (remainder i l))]
+        ['inc  (set! i (add1 i))]
+        ['val+ (let ([v (list-ref lst (remainder i l))])
+                 (begin
+                   (set! i (add1 i))
+                   v))]))))
 
-(define/contract (gen-mono-acc-gen acc)
-  (-> accent? (-> exact-positive-integer? exact-nonnegative-integer? duration? (or/c #f pitch/c) (or/c #f dynamic?) (or/c #f accent?)))
-  (lambda (tot cur dur pit dyn)
-    #f))
-
-(define notes (note-gen 128 (gen-mono-dur-gen 'E) (gen-mono-pit-gen (cons 'C '0va)) (gen-mono-dyn-gen 'Forte) (gen-mono-acc-gen 'Accent)))
-
-
-        ;; convert timeSig, curLen, addLen into a list of tuples per group being careful to allow for
-        ;; overlap of curLen into beginning of timeSig, then call inner-add-end-durs for each
-        ;; * timeSig into (list timeSig) by groups e.g. 7/8 grouped as 2 2 3 becomes (2/8 2/8 3/8)
-        ;; * curLen into (list curLen)
-        ;; * addLen into (list addLen)
-        [(TimeSignatureGrouping? timeSig)
-         (let* ([groups    (TimeSignatureGrouping-groups timeSig)]
-                [num       (TimeSignatureGrouping-num timeSig)]
-                [denom     (TimeSignatureGrouping-denom timeSig)]
-                [timeSigs  (map (lambda (num) TimeSignatureSimple num denom) groups)]
-                [beatLen   (duration->int denom)]
-                [barLen    (* num beatLen)]
-                [groupLens (map (lambda (groupLen) (* groupLen beatLen)) groups)]
-                [groupSums (scanl + groupLens)]
-                [spillOver (remainder curLen barLen)])
-           (let inner ([ix (list-index (lambda (gs) (> gs spillOver)) groupSums)]
-[remAddLen
-
-(define/contract (curlen->addlen timesig curlen)
-  (-> time-signature/c exact-positive-integer? exact-positive-integer?)
-  (match timesig
-    [(TimeSignatureSimple num denom) (min curlen (* num (duration->int denom)))]
-    [(TimeSignatureGrouping _ num denom) (min curlen (* num (duration->int denom)))]
-    [else (error curlen->addlen "unrecognized time signature ~v" timesig)]))
-
-(define/contract (timesig-num timesig)
-  (-> time-signature/c exact-positive-integer?)
-  (match timesig
-    [(TimeSignatureSimple num denom) num]
-    [(TimeSignatureGrouping groups num denom) num]
-    [else (error timesig-num "timesig-num unrecognized time signature ~v" timesig)]))
-
-(define/contract (timesig-denom timesig)
-  (-> time-signature/c duration?)
-  (match timesig
-    [(TimeSignatureSimple num denom) denom]
-    [(TimeSignatureGrouping groups num denom) denom]
-    [else (error timesig-denom "timsig-denom unrecognized time signature ~v" timesig)]))
-
-(define/contract (add-end-durs timesig curlen addlen)
-  (-> time-signature/c exact-nonnegative-integer? exact-nonnegative-integer? (listof duration?))
-  (cond [(TimeSignatureSimple? timesig)
-         (let ([num   (TimeSignatureSimple-num timesig)]
-               [denom (TimeSignatureSimple-denom timesig)])
-           (inner-add-end-durs num denom curlen addlen))]
-        [(TimeSignatureGrouping? timesig)
-         ;; groups is a list numerators as positive integers
-         (let ([groups (TimeSignatureGrouping-groups timesig)]
-               [num    (TimeSignatureGrouping-num timesig)]
-               [denom  (TimeSignatureGrouping-denom timesig)])
-           (let ([timesigs  (map (lambda (group) (TimeSignatureSimple group denom)) groups)]
-                 [barlens   (map (lambda (group) (* group (duration->int denom))) groups)]
-                 [grpcurlen (remainder curlen (* num (duration->int denom)))])
-             (let* ([barlenstots   (scanl + barlens)]
-                    [initcycleix   (list-index (lambda (barlenstot) (> barlenstot grpcurlen)) barlenstots)]
-                    [cycletimesigs (make-cycle timesigs initcycleix)])
-               ;; initial durs is special because it starts after curlen offset
-               (let* ([inittimesig  (cycletimesigs 'val)]
-                      [initaddlen   (min addlen (- (list-ref barlenstots initcycleix) curlen))]
-                      [initcurlen   (- (list-ref barlens initcycleix) initaddlen)]
-                      [initdurs     (add-end-durs inittimesig initcurlen initaddlen)])
-                 ;; rest of durs cycles through time sigs with curlen 0 and addlen same as barlen
-                 (let ([p (lambda (seed)
-                            (begin
-                              (cycletimesigs 'inc)
-                              (zero? seed)))]
-                       [f (lambda (seed)
-                            (let* ([timesig (cycletimesigs 'val)]
-                                   [addlen  (curlen->addlen timesig seed)])
-                              (add-end-durs timesig 0 addlen)))]
-                       [g (lambda (seed)
-                            (let* ([timesig (cycletimesigs 'val)]
-                                   [addlen  (curlen->addlen timesig seed)])
-                              (- seed addlen)))])
-                   (let* ([seed (- addlen initaddlen)]
-                          [succdurss (unfold p f g seed)])
-                     (flatten (cons initdurs succdurss))))))))]
-        [(TimeSignatureCompound? timesig)
-         ;; groups is a list of list of positive integers of one or more:
-         ;; * (num denom) i.e. TimeSignatureSimple 
-         ;; * (num1 num2 ... denom) i.e. TimeSignatureGrouping
-         (let ([group->timesig (lambda (group)
-                                 (cond [(eq? 2 (length group)) (TimeSignatureSimple (car group) (cadr group))]
-                                       [else (let ([nums (take (- (length group) 1) group)]
-                                                   [denom (last group)])
-                                               TimeSignatureGrouping nums (apply + nums) (int->duration denom))]))])
-           (let* ([timesigs (map group->timesig (TimeSignatureCompound-groups timesig))]
-                  [barlens   (map (lambda (timesig) (* (timesig-num timesig) (duration->int (timesig-denom timesig)))) timesigs)]
-                  [grpcurlen (remainder curlen (apply + barlens))])
-             (let* ([barlenstots   (scanl + barlens)]
-                    [initcycleix   (list-index (lambda (barlenstot) (> barlenstot grpcurlen)) barlenstots)]
-                    [cycletimesigs (make-cycle timesigs initcycleix)])
-               ;; initial durs is special because it starts after curlen offset
-               (let* ([inittimesig  (cycletimesigs 'val)]
-                      [initaddlen   (min addlen (- (list-ref barlenstots initcycleix) curlen))]
-                      [initcurlen   (- (list-ref barlens initcycleix) initaddlen)]
-                      [initdurs     (add-end-durs inittimesig initcurlen initaddlen)])
-                 (cycletimesigs 'inc)
-                 ;; rest of durs cycles through time sigs with curlen 0 and addlen same as barlen
-                 (let ([p (lambda (seed)
-                            (begin
-                              (cycletimesigs 'inc)
-                              (zero? seed)))]
-                       [f (lambda (seed)
-                            (let* ([timesig (cycletimesigs 'val)]
-                                   [addlen  (curlen->addlen timesig seed)])
-                              (add-end-durs timesig 0 addlen)))]
-                       [g (lambda (seed)
-                            (let* ([timesig (cycletimesigs 'val)]
-                                   [addlen  (curlen->addlen timesig seed)])
-                              (- seed addlen)))])
-                   (let* ([seed (- addlen initaddlen)]
-                          [succdurss (unfold p f g seed)])
-                     (flatten (cons initdurs succdurss))))))))]
-        [else (error 'add-end-durs "unrecognized time sig ~v" timesig)]))
 |#
 

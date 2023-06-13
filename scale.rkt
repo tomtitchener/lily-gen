@@ -2,34 +2,39 @@
 
 (require br/macro)
 (require srfi/1)
+(require (only-in srfi/1 list-index))
 (require "score.rkt")
-(require "score-syms.rkt")
 (require "utils.rkt")
 
 (provide (all-defined-out))
 
+(define/contract (octave-list-idx oct)
+  (-> octave? natural?)
+  (list-index ((curry eq?) oct) octave-syms))
 
-(define/contract (scale-ctor-guard pitch-classes type-name)
-  (-> (listof pitch-class?) symbol? (listof pitch-class?))
-  (cond [(null? pitch-classes)
-         (error type-name "empty list of pitch-classes")]
-        [(check-duplicates pitch-classes)
-         (error type-name "pitch-classes not unique: ~e" pitch-classes)]
-        [else pitch-classes]))
+(define/contract (octave-list-ref idx)
+  (-> natural? octave?)
+  (when (or (< idx 0) (>= idx (length octave-syms)))
+    (error 'octave-list-ref "idx: ~s out of range for octave-syms ~s" idx octave-syms))
+  (list-ref octave-syms idx))
 
-(struct Scale (pitch-classes) #:transparent #:guard scale-ctor-guard)
+(define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
+  (-> (non-empty-listof pitch-class?) pitch-class? natural?)
+  (let ([ret (list-index ((curry eq?) pitch-class) pitch-class-syms)])
+    (when (not ret)
+      (error 'pitch-class-list-idx "pitch-class ~s is not in list ~s" pitch-class pitch-class-syms))
+    ret))
 
-#;(struct Scale (pitch-classes)
-  #:transparent
-  #:guard (lambda (pitch-classes type-name)
-            (cond [(null? pitch-classes)
-                   (error type-name "empty list of pitch-classes")]
-                  [(not (andmap pitch-class? pitch-classes))
-                   (error type-name "not only pitch-classes in list ~e" pitch-classes)]
-                  [(check-duplicates pitch-classes)
-                   (error type-name "pitch-classes not unique: ~e" pitch-classes)]
-                  [else pitch-classes])
-                  ))
+(define/contract (pitch-class-list-ref pitch-class-syms idx)
+  (-> (non-empty-listof pitch-class?) natural? pitch-class?)
+  (when (or (< idx 0) (>= idx (length pitch-class-syms)))
+    (error 'pitch-class-list-ref "idx: ~s out of range for pitch-class-syms ~s" idx pitch-class-syms))
+  (list-ref pitch-class-syms idx))
+
+(define no-duplicates/c
+  (make-flat-contract #:name 'no-duplicates/c #:first-order (compose not check-duplicates)))
+
+(struct/contract Scale ([pitch-classes (and/c (non-empty-listof pitch-class?) no-duplicates/c)]) #:transparent)
 
 (define chromatic-sharps (Scale '(C Cs D Ds E F Fs G Gs A As B)))
 
@@ -201,6 +206,36 @@
   (let ([cnt-pcs  (length (Scale-pitch-classes scale))]
         [cnt-octs (length octave-syms)])
     (sub1 (* cnt-octs cnt-pcs))))
+
+;; A simple pitch range into a list of notes of equal duration, no rests.
+;; Ascending or descending depending on start, stop, and step.
+(define/contract (note-range scale duration pitch start stop [step 1])
+  (->* (Scale? duration? pitch/c integer? integer?) (integer?) (listof Note?))
+  (when (or (eq? step 0)
+            (eq? start stop) 
+            (and (< start stop) (< step 0))
+            (and (> start stop) (> step 0)))
+    (error 'note-range "invalid start ~v, stop ~v, or step ~v" start stop step))
+  (let ([pitches (transpose/absolute scale pitch (range start stop step))])
+    (map (lambda (p) (Note (car p) (cdr p) duration '() #f)) pitches)))
+
+;; Append ordinary and reverse direction note ranges, up-down or down-up.
+(define/contract (inverted-note-ranges scale duration pitch start stop [step 1])
+  (->* (Scale? duration? pitch/c integer? integer?) (integer?) (listof Note?))
+  (let ([beginning (note-range scale duration pitch start stop step)]
+        [ending    (note-range scale duration pitch stop start (- step))])
+    (append beginning ending)))
+#|
+(define ascending-thirds (repeat-list 10 (note-range C-major 'S. (cons 'C '0va) -9 15 2)))
+(define ascending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-thirds))
+(define ascending-descending-thirds (repeat-list 10 (inverted-note-ranges D-major 'S (cons 'D '8vb) -7 18 2)))
+(define ascending-descending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-descending-thirds))
+(define voices-group (VoicesGroup
+                      (TempoDur 'Q 120)
+                      (TimeSignatureSimple 3 'Q)
+                      (list ascending-thirds-voice ascending-descending-thirds-voice)))
+(define simple-score (Score "simple" "" (list voices-group)))
+|#
 
 (module+ test
   (require rackunit)

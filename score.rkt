@@ -23,6 +23,8 @@
          (struct-out TimeSignatureGrouping)
          (struct-out TimeSignatureCompound))
 
+(provide (all-from-out "score-syms.rkt"))
+
 (require "score-syms.rkt")
 
 (define pitch/c

@@ -1,24 +1,34 @@
 #lang racket
 
-(require "utils.rkt")
 (require "score.rkt")
-(require "score-syms.rkt")
-(require (only-in "lily-utils.rkt" int->durations duration->int))
+(require "gens.rkt")
+(require "lily-utils.rkt")
 (require srfi/1)
+(require racket/generator)
 
 (provide extend&align-voices-group-durations)
 
+(define/contract (voice-event->duration-int voice-event)
+  (-> voice-event/c exact-nonnegative-integer?)
+  (match voice-event
+    [(Note _ _ dur _ _) (duration->int dur)]
+    [(Rest dur)         (duration->int dur)]
+    [(Chord _ dur _ _)  (duration->int dur)]
+    [(Tuplet _ _ dur _) (duration->int dur)]
+    [(KeySignature _ _) 0]
+    [(? clef?)          0]))
+
 ;; convert the meter or meters in timesig to a cycle of SimpleTimeSignature
-(define/contract (timesig->num-denom-cycle timesig)
-  (-> time-signature/c (-> symbol? (or/c any/c void?)))
+(define/contract (timesig->num-denom-generator timesig)
+  (-> time-signature/c generator?)
   (match timesig
     ;; TimeSignatureSimple is just a single-item list of a num denom pair
     [(TimeSignatureSimple num denom)
-     (make-cycle (list (cons num denom)))]
+     (cycle-generator (list (cons num denom)))]
     ;; TimeSignatureGrouping is a list of num denom pairs, one for each of nums
     [(TimeSignatureGrouping nums _ denom)
      (let ([num-denom-prs (map (lambda (num) (cons num denom)) nums)])
-       (make-cycle num-denom-prs))]
+       (cycle-generator num-denom-prs))]
     ;; TimeSignatureGrouping is the concatenated list of list of num denom pairs
     ;; with each inner list containing one list of num denom pairs per outer list
     ;; of one or nums that ends with a denom
@@ -28,7 +38,7 @@
                                          [denom (last nums-denom)])
                                      (map (lambda (num) (cons num denom)) nums)))
                                  nums-denoms)])
-       (make-cycle (apply append num-denom-prss)))]))
+       (cycle-generator (apply append num-denom-prss)))]))
 
 (define/contract (num-denom-pr->barlen num-denom-pr)
   (-> (cons/c exact-positive-integer? duration?) exact-positive-integer?)
@@ -38,16 +48,16 @@
 ;; answer the spillover curlen into the (num . denom) cycle
 ;; side-effect: maybe advance cycle to point at that (num . denom) value
 ;; assumes:  time-signature represented by cycle covers all of curlen
-(define/contract (advance-num-denom-cycle-to-start cycle curlen)
-  (-> (-> symbol? (or/c any/c void?)) exact-nonnegative-integer? exact-nonnegative-integer?)
-  (let ([barlen (num-denom-pr->barlen (cycle 'val))])
+(define/contract (advance-num-denom-gen-to-start num-denom-gen curlen)
+  (-> generator? exact-nonnegative-integer? exact-nonnegative-integer?)
+  (let* ([num-denom (num-denom-gen)]
+         [barlen (num-denom-pr->barlen num-denom)])
     (cond [(zero? curlen)
            0]
           [(>= barlen curlen)
            curlen]
           [else
-           (cycle 'inc)
-           (advance-num-denom-cycle-to-start cycle (- curlen barlen))])))
+           (advance-num-denom-gen-to-start num-denom-gen (- curlen barlen))])))
 
 ;; low-level routine given a simple time signature, current length in 128th notes
 ;; and length to span in 128th notes, e.g. for a rest, then a rest per duration in the
@@ -98,31 +108,20 @@
 ;;    bar until remaining addlen goes to zero
 (define/contract (add-end-durs-for-time-sig timesig tot-curlen tot-addlen)
   (-> time-signature/c exact-nonnegative-integer? exact-nonnegative-integer? (listof duration?))
-  (let* ([cycle        (timesig->num-denom-cycle timesig)]                                                      ;; 1
-         [spilllen     (advance-num-denom-cycle-to-start cycle tot-curlen)]                                     ;; 2
-         [num-denom-pr (cycle 'val)]
-         [rem-bar      (- (num-denom-pr->barlen num-denom-pr) spilllen)]                                        ;; 3
-         [init-addlen  (min tot-addlen rem-bar)]                                                                ;; 4
-         [init-durs    (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) spilllen init-addlen)] ;; 5
-         [succ-durs (let inner ([rem-addlen (- tot-addlen init-addlen)])                                        ;; 6
-                      (cycle 'inc)
-                      (if (zero? rem-addlen)
-                          '()
-                          (let* ([num-denom-pr (cycle 'val)]
-                                 [inner-addlen (min rem-addlen (num-denom-pr->barlen num-denom-pr))])
-                            (cons (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) 0 inner-addlen)
-                                  (inner (- rem-addlen inner-addlen))))))])
+  (let* ([num-denom-gen (timesig->num-denom-generator timesig)]                                                  ;; 1
+         [spilllen      (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]                               ;; 2
+         [num-denom-pr  (num-denom-gen)]
+         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spilllen)]                                        ;; 3
+         [init-addlen   (min tot-addlen rem-bar)]                                                                ;; 4
+         [init-durs     (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) spilllen init-addlen)] ;; 5
+         [succ-durs     (let inner ([rem-addlen (- tot-addlen init-addlen)])                                     ;; 6
+                          (if (zero? rem-addlen)
+                              '()
+                              (let* ([num-denom-pr (num-denom-gen)]
+                                     [inner-addlen (min rem-addlen (num-denom-pr->barlen num-denom-pr))])
+                                (cons (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) 0 inner-addlen)
+                                      (inner (- rem-addlen inner-addlen))))))])
     (apply append (cons init-durs succ-durs))))
-
-(define/contract (voice-event->duration-int voice-event)
-  (-> voice-event/c exact-nonnegative-integer?)
-  (match voice-event
-    [(Note _ _ dur _ _) (duration->int dur)]
-    [(Rest dur)         (duration->int dur)]
-    [(Chord _ dur _ _)  (duration->int dur)]
-    [(Tuplet _ _ dur _) (duration->int dur)]
-    [(KeySignature _ _) 0]
-    [(? clef?)          0]))
 
 ;; answser list of total durs because KeyboardVoice has treble and bass voices
 (define/contract (voice->total-durs voice)

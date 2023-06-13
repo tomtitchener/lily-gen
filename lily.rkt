@@ -1,9 +1,7 @@
 #lang at-exp racket
 
 (require "score.rkt")
-(require "score-syms.rkt")
 (require "lily-utils.rkt")
-(require "rhythm-utils.rkt")
          
 (provide score->lily)
 
@@ -222,20 +220,19 @@
   (let ([title        (Score-title        score)]
         [seed         (Score-seed         score)]
         [voice-groups (Score-voice-groups score)])
-    (let ([aligned-voice-groups (map extend&align-voices-group-durations voice-groups)])
-      @string-append{
-      \include "articulate.ly"
-      \version "2.24.1"
-      \header { title = "@title" copyright = "@seed" }
-      structure = {
-      <<
-      @(string-join (map voice-group->lily aligned-voice-groups))
-      >>
-      }
-      \score { \removeWithTag #'midi \structure \layout { \context { \Voice \remove "Note_heads_engraver" \consists "Completion_heads_engraver" \remove "Rest_engraver" \consists "Completion_rest_engraver" } } }
-      \score { \unfoldRepeats \articulate \keepWithTag #'midi \structure \midi {  } }
-      }
-      )))
+    @string-append{
+    \include "articulate.ly"
+    \version "2.24.1"
+    \header { title = "@title" copyright = "@seed" }
+    structure = {
+    <<
+    @(string-join (map voice-group->lily voice-groups))
+    >>
+    }
+    \score { \removeWithTag #'midi \structure \layout { \context { \Voice \remove "Note_heads_engraver" \consists "Completion_heads_engraver" \remove "Rest_engraver" \consists "Completion_rest_engraver" } } }
+    \score { \unfoldRepeats \articulate \keepWithTag #'midi \structure \midi {  } }
+    }
+    ))
 
 #|
 (define treble-notes `(Treble ,(Note 'C '0va 'Q '() #f) ,(Note 'D '0va 'Q '() #f) ,(Note 'E '0va 'S '() #f)))
