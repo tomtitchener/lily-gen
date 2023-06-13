@@ -1,12 +1,28 @@
 #lang racket
 
 (require br/macro)
+(require racket/provide)
 (require srfi/1)
 (require (only-in srfi/1 list-index))
 (require "score.rkt")
 (require "utils.rkt")
 
-(provide (all-defined-out))
+(provide (struct-out Scale)
+         chromatic-sharps
+         chromatic-flats
+         C-whole-tone
+         Df-whole-tone
+         xpose
+         transpose/successive
+         transpose/absolute
+         note-range
+         inverted-note-ranges
+         (matching-identifiers-out
+             #rx".*-major"
+             (all-defined-out))
+         (matching-identifiers-out
+             #rx".*-minor"
+             (all-defined-out)))
 
 (define/contract (octave-list-idx oct)
   (-> octave? natural?)
@@ -39,6 +55,10 @@
 (define chromatic-sharps (Scale '(C Cs D Ds E F Fs G Gs A As B)))
 
 (define chromatic-flats (Scale '(Cf C Df D Ef E F Gf G Af A Bf)))
+
+(define C-whole-tone (Scale '(C D E Fs Gs As)))
+
+(define Df-whole-tone (Scale '(Df Ef F G A B)))
 
 ;; octave-ordered enharmonic equivalents in ascending order C to C
 (define c-ordered-enharmonic-pitch-class-symss
