@@ -1,0 +1,15 @@
+
+File hierarchy (6/13/2023):  8 files, 4 levels
+
+   meter           lily    scale
+  /  |  \         |    \    |  |
+  V  `-. \        V     \   |  V
+  gens |  `-> lily-utils \  |  utils
+   |   |         |       |  |
+   |   `-----.   | .-----'  |
+   |         |   | |        |
+   |         V   V V        |
+   `------->  score  <------'
+                |
+                V
+           score-syms

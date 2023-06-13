@@ -19,7 +19,7 @@
          mode->lily
          octave->int)
 
-(require "score-syms.rkt")
+(require "score.rkt")
 (require racket/contract)
 
 (define pitch-lily-strings
