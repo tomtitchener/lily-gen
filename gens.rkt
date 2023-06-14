@@ -1,36 +1,42 @@
 #lang racket
 
-;; Generators
+;; Instances of generator:
+;; 1) endlessly repeat elements of a list in order 
+;; 2) generate note or rest for as long as the shortest generator
+;; 
+;; Generator tilities:
+;; 1) generate while predicate succeeds
 
+(provide
+ ;; endlessly repeat elements of a list
+ (contract-out
+  [cycle-generator (->* ((listof any/c)) (exact-nonnegative-integer?) generator?)])
+
+ ;; synthesize Note or Rest from three input generators, else void when any generator is done
+ (contract-out
+  [note-or-rest-generator (-> (-> (or/c pitch/c #f)) (-> duration?) (-> (or/c accent? #f)) (-> (or/c Note? Rest?)))])
+ 
+ ;; generate while predicate succeeds
+ (contract-out
+  [generate-while (-> predicate/c generator? (listof any/c))])
+ )
+
+;; - - - - - - - - -
+;; implementation
 (require racket/generator)
-(require "score.rkt")
 
-(provide (all-defined-out))
+(require (only-in "score.rkt" Note Rest Note? Rest? pitch/c accent? duration?))
 
-(define/contract (cycle-generator lst [start 0])
-  (->* ((listof any/c)) (exact-nonnegative-integer?) generator?)
+(define (cycle-generator lst [start 0])
   (let ([i start]
         [l (length lst)])
     (infinite-generator
      (yield (list-ref lst (remainder i l)))
      (set! i (add1 i)))))
 
-(define/contract (generator-done? gen)
-  (-> generator? boolean?)
-  (symbol=? 'done (generator-state gen)))
-
-(define/contract (generate-while pred gen)
-  (-> predicate/c generator? (listof any/c))
-  (let loop ()
-    (let ([next (gen)])
-      (if (pred next)
-          (cons next (loop))
-          '()))))
-
-;; answers Note? or Rest? for length of shortest generator, then void to mark generator state 'done,
-;; infinite if all generators are infinite
-(define/contract (note-or-rest-gen pitch-or-f-gen durations-gen accent-or-f-gen)
-  (-> generator? generator? generator? generator?)
+(define (note-or-rest-generator pitch-or-f-gen durations-gen accent-or-f-gen)
+  (define (generator-done? gen)
+    (symbol=? 'done (generator-state gen)))
   (infinite-generator
    (let ([pitch-or-f  (pitch-or-f-gen)]
          [duration    (durations-gen)]
@@ -43,6 +49,13 @@
                [controls (if accent-or-f (list accent-or-f) '())])
            (yield (Note pitch octave duration controls #f)))
          (yield (Rest duration))))))
+
+(define (generate-while pred gen)
+  (let loop ()
+    (let ([next (gen)])
+      (if (pred next)
+          (cons next (loop))
+          '()))))
 
 #|
 (define pitch-or-f-gen  (cycle-generator (list (cons 'C '0va) #f (cons 'E '0va))))

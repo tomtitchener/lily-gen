@@ -1,5 +1,8 @@
 #lang racket
 
+(require racket/contract)
+(require "score.rkt")
+
 (provide pitch-class->lily
          octave->lily
          duration->lily
@@ -18,9 +21,6 @@
          clef->lily
          mode->lily
          octave->int)
-
-(require "score.rkt")
-(require racket/contract)
 
 (define pitch-lily-strings
   '("bis"   "c"   "deses"

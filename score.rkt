@@ -1,12 +1,9 @@
 #lang racket
 
-(provide pitch/c
-         control/c
-         tempo/c
-         time-signature/c
-         voice-event/c
-         voice/c
-         (struct-out Score)
+;; Score and contained structs, contracts for pitch and sums, predicates and syms from score-syms.rkt
+;; goal is to capture all data and data predicates contained in score
+
+(provide (struct-out Score)
          (struct-out PitchedVoice)
          (struct-out KeyboardVoice)
          (struct-out SplitStaffVoice)
@@ -21,9 +18,14 @@
          (struct-out KeySignature)
          (struct-out TimeSignatureSimple)
          (struct-out TimeSignatureGrouping)
-         (struct-out TimeSignatureCompound))
-
-(provide (all-from-out "score-syms.rkt"))
+         (struct-out TimeSignatureCompound)
+         pitch/c
+         control/c
+         tempo/c
+         time-signature/c
+         voice-event/c
+         voice/c
+         (all-from-out "score-syms.rkt"))
 
 (require "score-syms.rkt")
 

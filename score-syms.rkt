@@ -1,6 +1,6 @@
 #lang racket
 
-(require srfi/1)
+;; symbol lists and predicates
 
 (provide pitch-class-syms
          pitch-class?
@@ -26,6 +26,8 @@
          clef?
          mode-syms
          mode?)
+
+(require srfi/1)
 
 (define pitch-class-syms
  '(Bs  C  Dff
@@ -54,7 +56,6 @@
    22va))
 
 (define (octave? o) (and (symbol? o) (member o octave-syms)))
-
 
 (define duration-syms
  '(W.  W
