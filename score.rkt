@@ -129,6 +129,4 @@
 
 (struct/contract Score ([title        string?]
                         [seed         string?]
-                        [voice-groups (listof VoicesGroup?)])
-                 #:transparent)
-
+                        [voice-groups (listof VoicesGroup?)]))

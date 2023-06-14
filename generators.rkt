@@ -1,10 +1,10 @@
 #lang racket
 
-;; Instances of generator:
+;; Instances:
 ;; 1) endlessly repeat elements of a list in order 
 ;; 2) generate note or rest for as long as the shortest generator
 ;; 
-;; Generator tilities:
+;; Utilities:
 ;; 1) generate while predicate succeeds
 
 (provide
@@ -57,23 +57,27 @@
           (cons next (loop))
           '()))))
 
-#|
-(define pitch-or-f-gen  (cycle-generator (list (cons 'C '0va) #f (cons 'E '0va))))
-(define duration-gen    (cycle-generator '(E S S E S S)))
-(define accent-or-f-gen (cycle-generator '(Accent #f #f)))
-(define note-or-rest-gen (note-or-rest-gen pitch-or-f-gen duration-gen accent-or-f-gen))
-(define sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int note-or-rest-gen))
-(define note-or-rests (generate-while note-or-rest-gen 
-|#
+(module+ test
+  (require rackunit)
+  (require (only-in "utils.rkt" sum<=?))
+  (require (only-in "score-utils.rkt" voice-event->duration-int))
+  (let* ([pitch-or-f-gen  (cycle-generator (list (cons 'C '0va) #f (cons 'E '0va)))]
+         [duration-gen    (cycle-generator '(E S S E S S))]
+         [accent-or-f-gen (cycle-generator '(Accent #f #f))]
+         [note-or-rest-gen (note-or-rest-generator pitch-or-f-gen duration-gen accent-or-f-gen)]
+         [sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int 100)]
+         [note-or-rests (generate-while sum-note-or-rest-durations<=? note-or-rest-gen)])
+    (check-equal? note-or-rests
+                 (list
+                  (Note 'C '0va 'E '(Accent) #f)
+                  (Rest 'S)
+                  (Note 'E '0va 'S '() #f)
+                  (Note 'C '0va 'E '(Accent) #f)
+                  (Rest 'S)
+                  (Note 'E '0va 'S '() #f)
+                  (Note 'C '0va 'E '(Accent) #f)
+                  (Rest 'S)
+                  (Note 'E '0va 'S '() #f)))
+    (check <= (apply + (map voice-event->duration-int note-or-rests)) 100)))
 
-#|
-Re: random subsystem in Racket.  Want to use (random-seed (current-milliseconds)) to get started.
-For recreating same number stream in a new score, save (current-milliseconds) via number->string
-to seed field in score.  There's better ways in Racket to initialize the pseudo-random number
-generator but I'm not sure they're worth the effort of recording a vector in the seed.
-
-Remember also progression by increasing intensity, e.g. for period use series like fibonacci, 
-e.g. 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, so the rate of change accelerates.  
-
-|#
 

@@ -13,3 +13,12 @@ File hierarchy (6/13/2023):  8 files, 4 levels
                 |
                 V
            score-syms
+
+
+Re: random subsystem in Racket.  Want to use (random-seed (current-milliseconds)) to get started.
+For recreating same number stream in a new score, save (current-milliseconds) via number->string
+to seed field in score.  There's better ways in Racket to initialize the pseudo-random number
+generator but I'm not sure they're worth the effort of recording a vector in the seed.
+
+Remember also progression by increasing intensity, e.g. for period use series like fibonacci, 
+e.g. 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, so the rate of change accelerates.  

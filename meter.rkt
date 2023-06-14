@@ -1,22 +1,12 @@
 #lang racket
 
 (require "score.rkt")
-(require "gens.rkt")
+(require "generators.rkt")
 (require "lily-utils.rkt")
 (require srfi/1)
 (require racket/generator)
 
 (provide extend&align-voices-group-durations)
-
-(define/contract (voice-event->duration-int voice-event)
-  (-> voice-event/c exact-nonnegative-integer?)
-  (match voice-event
-    [(Note _ _ dur _ _) (duration->int dur)]
-    [(Rest dur)         (duration->int dur)]
-    [(Chord _ dur _ _)  (duration->int dur)]
-    [(Tuplet _ _ dur _) (duration->int dur)]
-    [(KeySignature _ _) 0]
-    [(? clef?)          0]))
 
 ;; convert the meter or meters in timesig to a cycle of SimpleTimeSignature
 (define/contract (timesig->num-denom-generator timesig)
