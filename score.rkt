@@ -3,37 +3,54 @@
 ;; Score and contained structs, contracts for pitch and sums, predicates and syms from score-syms.rkt
 ;; goal is to capture all data and data predicates contained in score
 
-(provide (struct-out Score)
-         (struct-out PitchedVoice)
-         (struct-out KeyboardVoice)
-         (struct-out SplitStaffVoice)
-         (struct-out VoicesGroup)
-         (struct-out Note)
-         (struct-out Rest)
-         (struct-out Tuplet)
-         (struct-out Chord)
-         (struct-out TempoDur)
-         (struct-out TempoLong)
-         (struct-out TempoRange)
-         (struct-out KeySignature)
-         (struct-out TimeSignatureSimple)
-         (struct-out TimeSignatureGrouping)
-         (struct-out TimeSignatureCompound)
-         pitch/c
-         control/c
-         tempo/c
-         time-signature/c
-         voice-event/c
-         voice/c
-         (all-from-out "score-syms.rkt"))
+(provide
+ ;; - - - - - - - - -
+ ;; structs
+ (struct-out Score)
+ (struct-out PitchedVoice)
+ (struct-out KeyboardVoice)
+ (struct-out SplitStaffVoice)
+ (struct-out VoicesGroup)
+ (struct-out Note)
+ (struct-out Rest)
+ (struct-out Tuplet)
+ (struct-out Chord)
+ (struct-out TempoDur)
+ (struct-out TempoLong)
+ (struct-out TempoRange)
+ (struct-out KeySignature)
+ (struct-out TimeSignatureSimple)
+ (struct-out TimeSignatureGrouping)
+ (struct-out TimeSignatureCompound)
+ ;; - - - - - - - - -
+ ;; contracts
+ pitch/c
+ maybe-pitch/c
+ control/c
+ num-denom/c
+ tempo/c
+ time-signature/c
+ voice-event/c
+ voice/c
+ ;; - - - - - - - - -
+ ;; symbols and predicates
+ (all-from-out "score-syms.rkt"))
 
+;; - - - - - - - - -
+;; implementation
 (require "score-syms.rkt")
 
 (define pitch/c
   (make-flat-contract #:name 'pitch/c #:first-order (cons/c pitch-class? octave?)))
 
+(define maybe-pitch/c
+  (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c pitch/c false/c)))
+
 (define control/c
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
+
+(define num-denom/c
+  (make-flat-contract #:name 'num-denom/c #:first-order (cons/c exact-positive-integer? duration?)))
 
 (struct/contract Note ([pitch    pitch-class?]
                        [octave   octave?]

@@ -1,10 +1,17 @@
 #lang at-exp racket
 
+;; convert Score to Lilypond string by traversing Score struct
+
+(provide
+ (contract-out
+  [score->lily (-> Score? string?)]))
+         
+;; - - - - - - - - -
+;; implementation
 (require "score.rkt")
+
 (require "lily-utils.rkt")
          
-(provide score->lily)
-
 (define/contract (control->lily control)
   (-> control/c string?)
   (cond [(accent?     control) (accent->lily    control)]
@@ -59,7 +66,6 @@
 ;; NB: using \\markup { ~a } for the text parts of a TempoText
 ;; and TempoLong means you can specify e.g. "\\italic Adagio" 
 ;; as well as unmarked-up "Adagio"
-
 (define/contract (tempotext->lily tempo)
   (-> string? string?)
   (format "\\tempo \\markup { ~a }" tempo))
@@ -110,9 +116,6 @@
         [num    (TimeSignatureGrouping-num     time-signature)]
         [denom  (TimeSignatureGrouping-denom   time-signature)])
     (format "\\time ~a ~a/~a" (string-join (map number->string groups) ",") num (duration->lily denom))))
-
-(define num-denom/c
-  (make-flat-contract #:name 'num-denom/c #:first-order (cons/c exact-positive-integer? duration?)))
 
 (define/contract (numdenompr->lily pr)
   (-> num-denom/c string?)
@@ -215,8 +218,7 @@
         [voices         (VoicesGroup-voices         voice-group)])
     (string-join (map (lambda (voice) (voice->lily tempo time-signature voice)) voices))))
 
-(define/contract (score->lily score)
-  (-> Score? string?)
+(define (score->lily score)
   (let ([title        (Score-title        score)]
         [seed         (Score-seed         score)]
         [voice-groups (Score-voice-groups score)])

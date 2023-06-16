@@ -1,26 +1,35 @@
 #lang racket
 
-(require racket/contract)
-(require "score.rkt")
+;; convert symbols for lilypond atoms to lilypond strings
 
-(provide pitch-class->lily
-         octave->lily
-         duration->lily
-         duration->int
-         int->duration
-         int->durations
-         accent->lily
-         dynamic->lily
-         swell->lily
-         sustain->lily
-         sostenuto->lily
-         slur->lily
-         ann->lily
-         instr->lily
-         instr->short-lily
-         clef->lily
-         mode->lily
-         octave->int)
+(provide
+ ;; all these are the same contract, (-> symbol? string?),
+ ;; all lookup symbol in list from score.rkt (except ann->lily)
+ pitch-class->lily
+ octave->lily
+ duration->lily
+ accent->lily
+ dynamic->lily
+ swell->lily
+ sustain->lily
+ sostenuto->lily
+ slur->lily
+ ann->lily          ;; formats annotation with markup bracket
+ instr->lily        ;; full midi instrument name
+ instr->short-lily  ;; shortened instrument name for left margin
+ clef->lily
+ mode->lily
+ ;; contracts 
+ (contract-out
+  [duration->int  (-> symbol? natural-number/c)]
+  [int->durations (-> natural-number/c (listof natural-number/c))]))
+
+;; - - - - - - - - -
+;; implementation
+(require racket/contract)
+
+;; indirectly imports all from score-syms.rkt
+(require "score.rkt")
 
 (define pitch-lily-strings
   '("bis"   "c"   "deses"
@@ -37,9 +46,6 @@
     "aisis" "b"   "ces"))
 
 (define sym-pitch-hash (make-hash (map cons pitch-class-syms pitch-lily-strings)))
-
-(define (pitch->lily pitch)
-  (hash-ref sym-pitch-hash pitch))
 
 (define (pitch-class->lily pitch)
   (hash-ref sym-pitch-hash pitch))
@@ -59,21 +65,6 @@
 (define (octave->lily octave)
   (hash-ref sym-octave-hash octave))
 
-(define octave-ints
-  '(-4
-    -3
-    -2
-    -1
-    0
-    1
-    2
-    3))
-
-(define octave-int-hash (make-hash (map cons octave-syms octave-ints)))
-
-(define (octave->int octave)
-  (hash-ref octave-int-hash octave))
-
 (define duration-lily-strings
   '("1."  "1"
     "2."  "2"
@@ -84,6 +75,7 @@
     "64." "64"
     "128"))
 
+;; in 128ths 
 (define duration-vals
  '(192 128
     96  64
@@ -106,11 +98,12 @@
 
 (define int-duration-hash (make-hash (map cons duration-vals duration-syms)))
 
-(define (int->duration duration)
-  (hash-ref int-duration-hash duration))
-
+;; totval is any non-zero positive integer,
+;; answer the list of durations large -> small to exhaust totval
 (define/contract (int->durations totval)
-  (-> exact-nonnegative-integer? (listof duration?))
+  (-> natural-number/c (listof duration?))
+  (define (int->duration duration)
+    (hash-ref int-duration-hash duration))
   (let inner ([tot totval]
               [ret '()])
     (if (zero? tot)

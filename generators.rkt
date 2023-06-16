@@ -1,8 +1,8 @@
 #lang racket
 
-;; Instances:
+;; generators:
 ;; 1) endlessly repeat elements of a list in order 
-;; 2) generate note or rest for as long as the shortest generator
+;; 2) note or rest for as long as the shortest generator
 ;; 
 ;; Utilities:
 ;; 1) generate while predicate succeeds
@@ -10,13 +10,13 @@
 (provide
  ;; endlessly repeat elements of a list
  (contract-out
-  [cycle-generator (->* ((listof any/c)) (exact-nonnegative-integer?) generator?)])
+  [cycle-generator (->* ((listof any/c)) (natural-number/c) generator?)])
 
  ;; synthesize Note or Rest from three input generators, else void when any generator is done
  (contract-out
-  [note-or-rest-generator (-> (-> (or/c pitch/c #f)) (-> duration?) (-> (or/c accent? #f)) (-> (or/c Note? Rest?)))])
+  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))])
  
- ;; generate while predicate succeeds
+ ;; generate until predicate fails or generator-state is done
  (contract-out
   [generate-while (-> predicate/c generator? (listof any/c))])
  )
@@ -27,6 +27,7 @@
 
 (require (only-in "score.rkt" Note Rest Note? Rest? pitch/c accent? duration?))
 
+;; (->* ((listof any/c)) (natural-number/c) generator?)
 (define (cycle-generator lst [start 0])
   (let ([i start]
         [l (length lst)])
@@ -34,6 +35,7 @@
      (yield (list-ref lst (remainder i l)))
      (set! i (add1 i)))))
 
+;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
 (define (note-or-rest-generator pitch-or-f-gen durations-gen accent-or-f-gen)
   (define (generator-done? gen)
     (symbol=? 'done (generator-state gen)))
@@ -50,12 +52,13 @@
            (yield (Note pitch octave duration controls #f)))
          (yield (Rest duration))))))
 
+;; generate-while (-> predicate/c generator? (listof any/c))
 (define (generate-while pred gen)
   (let loop ()
     (let ([next (gen)])
-      (if (pred next)
-          (cons next (loop))
-          '()))))
+      (cond [(eq? 'done (generator-state gen)) '()]
+            [(pred next) (cons next (loop))]
+            [else '()]))))
 
 (module+ test
   (require rackunit)

@@ -14,6 +14,18 @@ File hierarchy (6/13/2023):  8 files, 4 levels
                 V
            score-syms
 
+Follow: https://docs.racket-lang.org/style/Units_of_Code.html
+
+1) generators   x
+2) lily-utils
+3) lily
+4) meter
+5) scale
+6) score-syms
+7) score
+8) utils
+
+
 
 Re: random subsystem in Racket.  Want to use (random-seed (current-milliseconds)) to get started.
 For recreating same number stream in a new score, save (current-milliseconds) via number->string

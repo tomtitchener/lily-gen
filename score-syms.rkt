@@ -1,32 +1,36 @@
 #lang racket
 
-;; symbol lists and predicates
+;; symbol lists and predicates, get used in text to create atoms in Score
 
-(provide pitch-class-syms
-         pitch-class?
-         octave-syms
-         octave?
-         duration-syms
-         duration?
-         accent-syms
-         accent?
-         dynamic-syms
-         dynamic?
-         swell-syms
-         swell?
-         sustain-syms
-         sustain?
-         sostenuto-syms
-         sostenuto?
-         slur-syms
-         slur?
-         instr-syms
-         instr?
-         clef-syms
-         clef?
-         mode-syms
-         mode?)
+(provide
+ ;; all are either (listof symbol?) or (-> symbol? boolean?)
+ pitch-class-syms
+ pitch-class?
+ octave-syms
+ octave?
+ duration-syms
+ duration?
+ accent-syms
+ accent?
+ dynamic-syms
+ dynamic?
+ swell-syms
+ swell?
+ sustain-syms
+ sustain?
+ sostenuto-syms
+ sostenuto?
+ slur-syms
+ slur?
+ instr-syms
+ instr?
+ clef-syms
+ clef?
+ mode-syms
+ mode?)
 
+;; - - - - - - - - -
+;; implementation
 (require srfi/1)
 
 (define pitch-class-syms

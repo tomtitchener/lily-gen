@@ -1,12 +1,24 @@
 #lang racket
 
-(require "score.rkt")
-(require "generators.rkt")
-(require "lily-utils.rkt")
+;; comment
+
+(provide
+ (contract-out
+  [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
+
+;; - - - - - - - - -
+;; implementation
 (require srfi/1)
+
 (require racket/generator)
 
-(provide extend&align-voices-group-durations)
+(require "score.rkt")
+
+(require "score-utils.rkt")
+
+(require "generators.rkt")
+
+(require "lily-utils.rkt")
 
 ;; convert the meter or meters in timesig to a cycle of SimpleTimeSignature
 (define/contract (timesig->num-denom-generator timesig)
@@ -31,7 +43,7 @@
        (cycle-generator (apply append num-denom-prss)))]))
 
 (define/contract (num-denom-pr->barlen num-denom-pr)
-  (-> (cons/c exact-positive-integer? duration?) exact-positive-integer?)
+  (-> num-denom/c exact-positive-integer?)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
 
 ;; advance (num . denom) cycle through curlen until there's less than a barlen left
@@ -39,7 +51,7 @@
 ;; side-effect: maybe advance cycle to point at that (num . denom) value
 ;; assumes:  time-signature represented by cycle covers all of curlen
 (define/contract (advance-num-denom-gen-to-start num-denom-gen curlen)
-  (-> generator? exact-nonnegative-integer? exact-nonnegative-integer?)
+  (-> generator? natural-number/c natural-number/c)
   (let* ([num-denom (num-denom-gen)]
          [barlen (num-denom-pr->barlen num-denom)])
     (cond [(zero? curlen)
@@ -55,7 +67,7 @@
 ;; note: if input addlen exceeds length of a single bar, this will chew threw all of it
 ;; assuming a repeated sequence of num denom time in the remaining bars
 (define/contract (add-end-durs-for-num&denom num denom curLen addLen)
-  (-> exact-nonnegative-integer? duration? exact-nonnegative-integer? exact-nonnegative-integer? (listof duration?))
+  (-> natural-number/c duration? natural-number/c natural-number/c (listof duration?))
   (let* ([beatLen (duration->int denom)]
          [barLen  (* num beatLen)])
     (let accum ([cur curLen]
@@ -97,7 +109,7 @@
 ;; 6) compute list of list of dur lens for successive bars given remaining addlen bar by
 ;;    bar until remaining addlen goes to zero
 (define/contract (add-end-durs-for-time-sig timesig tot-curlen tot-addlen)
-  (-> time-signature/c exact-nonnegative-integer? exact-nonnegative-integer? (listof duration?))
+  (-> time-signature/c natural-number/c natural-number/c (listof duration?))
   (let* ([num-denom-gen (timesig->num-denom-generator timesig)]                                                  ;; 1
          [spilllen      (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]                               ;; 2
          [num-denom-pr  (num-denom-gen)]
@@ -253,8 +265,7 @@
     [(SplitStaffVoice instr voice-events)
      (SplitStaffVoice instr (align-voice-events-durations time-sig voice-events))]))
   
-(define/contract (extend&align-voices-group-durations voices-group)
-  (-> VoicesGroup? VoicesGroup?)
+(define (extend&align-voices-group-durations voices-group)  
   (let ([tempo     (VoicesGroup-tempo          voices-group)]
         [time-sig  (VoicesGroup-time-signature voices-group)]
         [voices    (VoicesGroup-voices         voices-group)])
