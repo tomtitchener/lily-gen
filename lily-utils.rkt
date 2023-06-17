@@ -3,7 +3,7 @@
 ;; convert symbols for lilypond atoms to lilypond strings
 
 (provide
- ;; all these are the same contract, (-> symbol? string?),
+ ;; all these are the same signature, (-> symbol? string?)
  ;; all lookup symbol in list from score.rkt (except ann->lily)
  pitch-class->lily
  octave->lily
@@ -157,6 +157,7 @@
 (define (ann->lily ann)
   (string-append "^\\markup { \\italic \"" ann "\" }"))
 
+;; copied from midi instrument list for lilypond conversion to midi
 (define instrs
   '("acoustic grand"            "contrabass"         "lead 7 (fifths)"
     "bright acoustic"           "tremolo strings"    "lead 8 (bass+lead)"

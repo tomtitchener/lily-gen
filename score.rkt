@@ -13,6 +13,7 @@
  (struct-out VoicesGroup)
  (struct-out Note)
  (struct-out Rest)
+ (struct-out Spacer)
  (struct-out Tuplet)
  (struct-out Chord)
  (struct-out TempoDur)
@@ -60,6 +61,8 @@
                  #:transparent)
 
 (struct/contract Rest ([dur duration?]) #:transparent)
+
+(struct/contract Spacer ([dur duration?]) #:transparent)
 
 (struct/contract Chord ([pitches  (listof pitch/c)]
                         [dur      duration?]
@@ -119,7 +122,7 @@
   (make-flat-contract #:name 'time-signature/c #:first-order (or/c TimeSignatureSimple? TimeSignatureGrouping? TimeSignatureCompound?)))
 
 (define voice-event/c
-  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Note? Rest? Tuplet? Chord? clef? KeySignature?)))
+  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
 
 (struct/contract PitchedVoice ([instr       instr?]
                                [voiceevents (listof voice-event/c)])

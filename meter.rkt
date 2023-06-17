@@ -1,6 +1,16 @@
 #lang racket
 
-;; comment
+;; * add rests to the end of all voices to fill in the last measure
+;;   for the longest voice if necessary
+;; * align durations in each VoicesGroup voice to reflect meter
+;;   e.g. by adding ties
+;; assumes:
+;; * durations for voice-events in voice aren't optimized for beats
+;;   in the bar or bar length
+;; * voices may be of different lengths
+;;
+;; * total duration voice-events without ties for the output equals
+;;   total duration of voice-events without ties for the input
 
 (provide
  (contract-out
@@ -20,8 +30,8 @@
 
 (require "lily-utils.rkt")
 
-;; convert the meter or meters in timesig to a cycle of SimpleTimeSignature
-(define/contract (timesig->num-denom-generator timesig)
+;; convert the meter or meters in time-signature to a cycle of SimpleTimeSignature
+(define/contract (time-signature->num-denom-generator timesig)
   (-> time-signature/c generator?)
   (match timesig
     ;; TimeSignatureSimple is just a single-item list of a num denom pair
@@ -41,10 +51,6 @@
                                      (map (lambda (num) (cons num denom)) nums)))
                                  nums-denoms)])
        (cycle-generator (apply append num-denom-prss)))]))
-
-(define/contract (num-denom-pr->barlen num-denom-pr)
-  (-> num-denom/c exact-positive-integer?)
-  (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
 
 ;; advance (num . denom) cycle through curlen until there's less than a barlen left
 ;; answer the spillover curlen into the (num . denom) cycle
@@ -110,7 +116,7 @@
 ;;    bar until remaining addlen goes to zero
 (define/contract (add-end-durs-for-time-sig timesig tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
-  (let* ([num-denom-gen (timesig->num-denom-generator timesig)]                                                  ;; 1
+  (let* ([num-denom-gen (time-signature->num-denom-generator timesig)]                                           ;; 1
          [spilllen      (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]                               ;; 2
          [num-denom-pr  (num-denom-gen)]
          [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spilllen)]                                        ;; 3
@@ -125,60 +131,37 @@
                                       (inner (- rem-addlen inner-addlen))))))])
     (apply append (cons init-durs succ-durs))))
 
-;; answser list of total durs because KeyboardVoice has treble and bass voices
-(define/contract (voice->total-durs voice)
-  (-> voice/c (listof exact-positive-integer?))
+;; require list of durs for voices with multiple staves (KeyboardVoice)
+(define/contract (add-rests-for-durlens tot-durlen voice added-durlens)
+  (-> natural? voice/c (listof natural?) voice/c)
+  (define (durlen->rests added-durlen) (map Rest (int->durations (tot-durlen - added-durlen))))
   (match voice
-    [(PitchedVoice _ voice-events)
-     (list (apply + (map voice-event->duration-int voice-events)))]
-    [(KeyboardVoice _ voice-events-pr)
-     (list (apply + (map voice-event->duration-int car voice-events-pr))
-           (apply + (map voice-event->duration-int cdr voice-events-pr)))]
-    [(SplitStaffVoice _ voice-events)
-     (list (apply + (map voice-event->duration-int voice-events)))]))
-
-(define/contract (time-sig->barlen time-sig)
-  (-> time-signature/c exact-positive-integer?)
-  (match time-sig
-    [(TimeSignatureSimple num denom)     (* num (duration->int denom))]
-    [(TimeSignatureGrouping _ num denom) (* num (duration->int denom))]
-    [(TimeSignatureCompound groups)      (apply + (map (lambda (grp)
-                                                         (let ([nums  (take grp (- (length grp) 1))]
-                                                               [denom (duration->int (last grp))])
-                                                           (apply + (map ((curry *) denom) nums))))
-                                                       groups))]))
-
-;; require list of durs because KeyboardVoice has treble and bass voices
-(define/contract (add-rests-for-durlens voice durlens)
-  (-> voice/c (listof exact-positive-integer?) voice/c)
-  (let ([durlen->rests (lambda (durlen) (map Rest (int->durations durlen)))])
-    (match voice
-      [(PitchedVoice instr voice-events)
-       (PitchedVoice instr (append voice-events (durlen->rests (car durlens))))]
-      [(KeyboardVoice instr voice-events-pr)
-       (KeyboardVoice instr (cons (append (car voice-events-pr) (durlen->rests (car durlens)))
-                                  (append (cdr voice-events-pr) (durlen->rests (cadr durlens)))))]
-      [(SplitStaffVoice instr voice-events)
-       (SplitStaffVoice instr (append voice-events (durlen->rests (car durlens))))])))
-
+    [(PitchedVoice instr voice-events)
+     (PitchedVoice instr (append voice-events (durlen->rests (car added-durlens))))]
+    [(KeyboardVoice instr voice-events-pr)
+     (KeyboardVoice instr (cons (append (car voice-events-pr) (durlen->rests (car added-durlens)))
+                                (append (cdr voice-events-pr) (durlen->rests (cadr added-durlens)))))]
+    [(SplitStaffVoice instr voice-events)
+     (SplitStaffVoice instr (append voice-events (durlen->rests (car added-durlens))))]))
 
 ;; add rests to the end of voice-events to carry all voices to the end of the last measure
-;; call this before align-voices-group-durations 
 (define/contract (extend-voices-durations time-sig voices)
   (-> time-signature/c (listof voice/c) (listof voice/c))
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
          [voices-total-durlenss (map voice->total-durs voices)]
-         ;; max of all list of list of total durlens, e.g. 32, want all voices to be this long
+         ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
          [max-total-durlen      (apply max (map ((curry apply) max) voices-total-durlenss))]
          ;; len of bar
-         [bar-durlen            (time-sig->barlen time-sig)]
-         ;; given max total-durlen, how much remains to get to the end of that bar?
-         [max-total-durlen-rem  (if (zero? (modulo max-total-durlen bar-durlen)) 0 (- bar-durlen (remainder max-total-durlen bar-durlen)))]
-         ;; target total durlen is sum of max-total-durlen and max-total-durlen-rem
-         [target-total-durlen   (+ max-total-durlen max-total-durlen-rem)]
+         [bar-durlen            (time-signature->barlen time-sig)]
+         ;; given max total-durlen, how much spills over into the last bar for the max-total-durlen?
+         [last-bar-spill-over   (modulo max-total-durlen bar-durlen)]
+         ;; given last-bar-spill-over, how much remains to get to the end of that bar?
+         [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
+         ;; target total durlen is sum of max-total-durlen and last-bar-remainder
+         [target-total-durlen   (+ max-total-durlen last-bar-remainder)]
          ;; difference between per-voice total-durlenss and target-total-durlen is durlen to add for rests per voice
-         [voices-rem-durlenss  (map ((curry map) ((curry -) target-total-durlen)) voices-total-durlenss)])
-    (map add-rests-for-durlens voices voices-rem-durlenss)))
+         [voices-rem-durlenss   (map ((curry map) ((curry -) target-total-durlen)) voices-total-durlenss)])
+    (map ((curry add-rests-for-durlens) max-total-durlen) voices voices-rem-durlenss)))
 
 ;; spread note-or-chord (except for dur) across all durs with pitch or pitches
 ;; from input with:
@@ -266,12 +249,12 @@
      (SplitStaffVoice instr (align-voice-events-durations time-sig voice-events))]))
   
 (define (extend&align-voices-group-durations voices-group)  
-  (let ([tempo     (VoicesGroup-tempo          voices-group)]
-        [time-sig  (VoicesGroup-time-signature voices-group)]
-        [voices    (VoicesGroup-voices         voices-group)])
-    (let* ([ex-voices (extend-voices-durations time-sig voices)]
-           [al-voices (map ((curry align-voice-durations) time-sig) ex-voices)])
-      (VoicesGroup tempo time-sig al-voices))))
+  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
+         ;; first extend all voices to end at the last bar line
+         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
+         ;; then align voice-event durations to reflect the meter
+         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
+    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
 
 #|
 (define tpo (TempoDur 'Q 120))

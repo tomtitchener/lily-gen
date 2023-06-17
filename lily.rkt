@@ -1,6 +1,9 @@
 #lang at-exp racket
 
 ;; convert Score to Lilypond string by traversing Score struct
+;; call with display to render newlines the output file
+;; note: only renders, need to prepare VoicesGroup voices
+;; with extend&align-voices-group-durations first
 
 (provide
  (contract-out
@@ -11,7 +14,9 @@
 (require "score.rkt")
 
 (require "lily-utils.rkt")
-         
+
+;; - - - - - - - - - - - - -
+;; support utilites (private)
 (define/contract (control->lily control)
   (-> control/c string?)
   (cond [(accent?     control) (accent->lily    control)]
@@ -35,6 +40,11 @@
   (-> Rest? string?)
   (let ([duration (Rest-dur rest)])
     (string-append "r" (duration->lily duration))))
+
+(define/contract (spacer->lily spacer)
+  (-> Spacer? string?)
+  (let ([duration (Spacer-dur spacer)])
+    (string-append "s" (duration->lily duration))))
 
 (define/contract (tuplet->lily tuplet)
   (-> Tuplet? string?)
@@ -139,6 +149,7 @@
   (-> voice-event/c string?)
   (cond [(Note?            voiceevent) (note->lily          voiceevent)]
         [(Rest?            voiceevent) (rest->lily          voiceevent)]
+        [(Spacer?          voiceevent) (spacer->lily        voiceevent)]
         [(Tuplet?          voiceevent) (tuplet->lily        voiceevent)]
         [(Chord?           voiceevent) (chord->lily         voiceevent)]
         [(clef?            voiceevent) (clef->lily          voiceevent)]

@@ -373,6 +373,7 @@
             (list C-major chromatic-sharps chromatic-flats A-minor A-major)))
 
 #|
+tbd:
 (define ascending-thirds (repeat-list 10 (note-range C-major 'S. (cons 'C '0va) -9 15 2)))
 (define ascending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-thirds))
 (define ascending-descending-thirds (repeat-list 10 (inverted-note-ranges D-major 'S (cons 'D '8vb) -7 18 2)))
