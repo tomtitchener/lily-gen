@@ -273,6 +273,75 @@
 ;;           '())))
 ;;   (flatten (cdr (foldl adjust-events-durations (cons 0 '()) (group-by cdar events)))))
 
+(define/contract (adjacent-rests? a b)
+  (-> voice-event/c voice-event/c boolean?)
+  (and (Rest? a) (Rest? b)))
+
+(define/contract (adjacent-tied-notes? a b)
+  (-> voice-event/c voice-event/c boolean?)
+  (and (Note? a) (Note-tie a) (Note? b)))
+
+(define/contract (adjacent-tied-chords? a b)
+  (-> voice-event/c voice-event/c boolean?)
+  (and (Chord? a) (Chord-tie a) (Chord? b)))
+
+(define/contract (adjacent-rests-or-tied-notes-or-chords? a b)
+  (-> voice-event/c voice-event/c boolean?)
+  (or (adjacent-rests? a b) (adjacent-tied-notes? a b) (adjacent-tied-chords? a b)))
+
+(module+ test
+  (require rackunit)
+  (check-false (adjacent-rests? (Rest 'Q) (Spacer 'Q)))
+  (check-false (adjacent-rests? (Spacer 'Q) (Rest 'Q)))
+  (check-true  (adjacent-rests? (Rest 'Q) (Rest 'Q)))
+  (define tied-note (Note 'C '0va 'Q '() #t))
+  (define not-tied-note (Note 'C '0va 'Q '() #f))
+  (check-true (adjacent-tied-notes? tied-note tied-note))
+  (check-true (adjacent-tied-notes? tied-note not-tied-note))
+  (check-false (adjacent-tied-notes? not-tied-note not-tied-note))
+  (define pitches (list (cons 'C '0va) (cons 'C '8va)))
+  (define tied-chord (Chord pitches 'Q '() #t))
+  (define not-tied-chord (Chord pitches 'Q '() #f))
+  (check-true (adjacent-tied-chords? tied-chord tied-chord))
+  (check-true (adjacent-tied-chords? tied-chord not-tied-chord))
+  (check-false (adjacent-tied-chords? not-tied-chord not-tied-chord))
+  (check-true (adjacent-rests-or-tied-notes-or-chords? (Rest 'Q) (Rest 'Q)))
+  (check-true (adjacent-rests-or-tied-notes-or-chords? tied-note tied-note))
+  (check-true (adjacent-rests-or-tied-notes-or-chords? tied-note not-tied-note))
+  (check-true (adjacent-rests-or-tied-notes-or-chords? tied-chord tied-chord))
+  (check-true (adjacent-rests-or-tied-notes-or-chords? tied-chord not-tied-chord))
+  ;; build list of voice-event with some adjacent rests, some tied notes, some tied chords
+  ;; mixed in with individual untied notes and chords, try
+  ;; (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+  (define spacer (Spacer 'Q))
+  (define voice-events (list spacer not-tied-note not-tied-note tied-note not-tied-note spacer spacer not-tied-chord not-tied-note tied-chord not-tied-chord tied-chord not-tied-chord not-tied-note not-tied-note))
+  (check-equal?
+   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+   (list
+    (list (Spacer 'Q))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f))
+    (list (Spacer 'Q))
+    (list (Spacer 'Q))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))))
+  )
+
+;; at the very least, align-voice-events-and-durations has to allow for tied notes or chords
+;; which in practical terms means first grouping by two Rest? in a row or else a special 
+;; binary comparison with an accumulator that remembers its already seen at least one rest
+;; so it knows to take one last note or chord that isn't tied so the list is of uniform
+;; tied notes or chords where the last one does not have the tied flag set, and *those* are
+;; what I need to process in the aggregate the same way I do for a list of Rest.
+;; Or maybe just a regular binop that says the first is a note that is tied and the
+;; second is a note that is isn't tied OR the first is a chord that is tied and the second
+;; is a chord that is or isn't tied.
+
 ;; using time-signature and list of voice-events, arrange the durations
 ;; to reflect the inner beat and measure divisions
 ;; * for list of one or more rests, aggregate the duration for all rests
@@ -282,7 +351,7 @@
 ;;   for the inner (tied) note or notes
 (define/contract (align-voice-events-durations time-sig voice-events)
   (-> time-signature/c (listof voice-event/c) (listof voice-event/c))
-  (let ([ve-groups (group-by-adjacent-sequences (lambda (x y) (and (Rest? x) (Rest? y))) voice-events)])
+  (let ([ve-groups (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)])
     (define (adjvedurs voice-event pr)
       (let ([curlen (car pr)]
             [ves    (cdr pr)])
