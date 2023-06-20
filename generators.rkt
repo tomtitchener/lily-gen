@@ -14,18 +14,21 @@
 
  ;; synthesize Note or Rest from three input generators, else void when any generator is done
  (contract-out
-  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))])
+  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) generator?)])
  
  ;; generate until predicate fails or generator-state is done
  (contract-out
   [generate-while (-> predicate/c generator? (listof any/c))])
+
+ (contract-out
+  [time-signature->num-denom-generator (-> time-signature/c generator?)])
  )
 
 ;; - - - - - - - - -
 ;; implementation
 (require racket/generator)
 
-(require (only-in "score.rkt" Note Rest Note? Rest? pitch/c accent? duration?))
+(require "score.rkt")
 
 ;; (->* ((listof any/c)) (natural-number/c) generator?)
 (define (cycle-generator lst [start 0])
@@ -51,6 +54,27 @@
                [controls (if accent-or-f (list accent-or-f) '())])
            (yield (Note pitch octave duration controls #f)))
          (yield (Rest duration))))))
+
+;; convert the meter or meters in time-signature to a cycle of SimpleTimeSignature
+(define (time-signature->num-denom-generator timesig)
+  (match timesig
+    ;; TimeSignatureSimple is just a single-item list of a num denom pair
+    [(TimeSignatureSimple num denom)
+     (cycle-generator (list (cons num denom)))]
+    ;; TimeSignatureGrouping is a list of num denom pairs, one for each of nums
+    [(TimeSignatureGrouping nums _ denom)
+     (let ([num-denom-prs (map (lambda (num) (cons num denom)) nums)])
+       (cycle-generator num-denom-prs))]
+    ;; TimeSignatureGrouping is the concatenated list of list of num denom pairs
+    ;; with each inner list containing one list of num denom pairs per outer list
+    ;; of one or nums that ends with a denom
+    [(TimeSignatureCompound nums-denoms)
+     (let* ([num-denom-prss (map (lambda (nums-denom)
+                                   (let ([nums (take nums-denom (- (length nums-denom) 1))]
+                                         [denom (last nums-denom)])
+                                     (map (lambda (num) (cons num denom)) nums)))
+                                 nums-denoms)])
+       (cycle-generator (apply append num-denom-prss)))]))
 
 ;; generate-while (-> predicate/c generator? (listof any/c))
 (define (generate-while pred gen)

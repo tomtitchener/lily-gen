@@ -8,7 +8,6 @@
 ;; * durations for voice-events in voice aren't optimized for beats
 ;;   in the bar or bar length
 ;; * voices may be of different lengths
-;;
 ;; * total duration voice-events without ties for the output equals
 ;;   total duration of voice-events without ties for the input
 
@@ -16,7 +15,7 @@
  (contract-out
   [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
 
-;; - - - - - - - - -
+;; - - - - - - - -
 ;; implementation
 (require srfi/1)
 
@@ -30,27 +29,7 @@
 
 (require "lily-utils.rkt")
 
-;; convert the meter or meters in time-signature to a cycle of SimpleTimeSignature
-(define/contract (time-signature->num-denom-generator timesig)
-  (-> time-signature/c generator?)
-  (match timesig
-    ;; TimeSignatureSimple is just a single-item list of a num denom pair
-    [(TimeSignatureSimple num denom)
-     (cycle-generator (list (cons num denom)))]
-    ;; TimeSignatureGrouping is a list of num denom pairs, one for each of nums
-    [(TimeSignatureGrouping nums _ denom)
-     (let ([num-denom-prs (map (lambda (num) (cons num denom)) nums)])
-       (cycle-generator num-denom-prs))]
-    ;; TimeSignatureGrouping is the concatenated list of list of num denom pairs
-    ;; with each inner list containing one list of num denom pairs per outer list
-    ;; of one or nums that ends with a denom
-    [(TimeSignatureCompound nums-denoms)
-     (let* ([num-denom-prss (map (lambda (nums-denom)
-                                   (let ([nums (take nums-denom (- (length nums-denom) 1))]
-                                         [denom (last nums-denom)])
-                                     (map (lambda (num) (cons num denom)) nums)))
-                                 nums-denoms)])
-       (cycle-generator (apply append num-denom-prss)))]))
+(require "utils.rkt")
 
 ;; advance (num . denom) cycle through curlen until there's less than a barlen left
 ;; answer the spillover curlen into the (num . denom) cycle
@@ -196,6 +175,104 @@
                   [end      (copy-note-or-chord note-or-chord (last durs) '() #f)])
              (cons start (append middle (list end))))])))
 
+;; bug: Note and Rest require duration? which can only be one of discrete e.g. non-tied values '(W. W H. H .. HTE)
+;; separation into integral rests is ok because you never tie between rests
+;; but if I stick to Note I have to be prepared to aggregate tied notes which is the only way to make arbitrary
+;; length notes
+;; but I don't deal with ties below at all, in fact, I'll arbitrary suppress them depending on whether or not I
+;; split the note into a list of tied notes
+;; so that's just a bug, but it calls into question the likely practice of the generation of a list of note or rest
+;; events, which is likely to consume arbitrary duration lengths in units of 128th notes
+;; which is what I believe I did in my Haskell implmentation, which was to leave durations as duration values in
+;; the base types and to assume at the point of lilypond output they'd been reduced to the discrete values, with
+;; ties between notes if necessary
+;; do I want to preserve this boundary and replicate the DurationVal type from Haskell which is sort of a two-faced
+;; solution as it allows for things to blow up at the lilypond generation level after you've gone to all the trouble
+;; of enconding an instance of the Score type?
+;;
+;; it's a pretty big dividing point because as things stand now, all the work below misses the point and it's going
+;; to take some thoughtful reworking to fix
+;; as the Haskell implementation stands it's a bit of a lie because of the DurationVal embedded in the Score type
+;; in my past Scheme experiments though I've never implemented the distribution of durations to reflect beats and
+;; bars, though I have plenty of code that treats with more abstract levels of data like the duration length, which
+;; gets resolved at a later stage to a list of one or more rests or tied notes which is what would better in terms
+;; of pipelining
+;;
+;; which asks the question, what do I want the pipelining to be then, what are the stages in assembling as score?
+;; I could have a point where I pick a duration and map it to a list of one or more notes or durations where the
+;; notes are tied and then I have to deal with tied notes below, which I don't currently do
+;; or I could have an intermediate form that indicates a pitch or a rest along with an arbitrary natural? for a
+;; duration in units of 128th notes
+;; that's intuitively more appealing because at that level I'm working with atoms anyway, likely including
+;; optional maybe accents and/or maybe dynamics
+;; in which case this code needs to shift down a level to deal with lists just the pitch/rest and duration with
+;; input of (cons/c (or/c pitch/c #f) natural?) and output of (listof (or/c Note? Rest?)) where adjacent notes
+;; may or may not be tied
+;; or maybe the conversion could retain the level of focus and convert (listof (cons/c (or/c pitch/c #f) natural?))
+;; to (listof (listof (cons/c (or/c pitch/c #f) duration?))) where adjacent (pitch/c . duration?) pairs are to be
+;; tied and adjacent (#f . duration?) are integral units to be eventually converted to Rest (or Spacer)
+;; what about Keyboard voice?
+;;
+;; or maybe seeing as I'm really reducing the number space for the natural-number to only those values allowed by
+;; duration? then I might as well go
+;; (-> (listof maybe-pitch&natural/c) (listof (or/c Note? Rest?)) 
+;; where tied as needed to match the time-signature and the intermediate stage would be
+;; (-> (listof maybe-pitch&natural/c) (listof (listof maybe-pitch&duration/c))) where inner lists 
+;; of more than one pitch would be translated into a series of tied notes and rests would just be flattened
+;;
+;; but what that list of pitch implies is a single attack or envelope which is where I'd want to attach controls
+;; so the meaningful division is between events that can be decorated with controls vs. events that lack controls
+;;
+;; note furthermore the need to capture the generator pattern as part of this
+;; I currently assume a complete list as input but maybe what I'm sourcing is a generators of the components
+;; which in this case wold be (cons/c maybe-pitch/c natural-number/c)
+;;
+;; the problem with that is I need to have a complete list in order to determine total length to append the
+;; rests to the ending bar
+;;
+;; which seems like premature optimization really, as during the accumulation of the components that make up
+;; a list of note-or-rest voice-events there's no reason I can't consume incrementally from source generators
+;; of the atoms which here I propose as maybe-note and duration maybe including controls as a sub-generator
+;; for the note path, all subject to eventual termination with e.g. generate-while which could stop when the
+;; next duration would cause the running total to exceed a mximum value
+;;
+;; and then at *that* point I can decide whether to clip the voice-events by end of the last bar for the
+;; shortest or to extend all voices with rests to match the end of the bar after longest
+;;
+;; all of these sharply redraws the contents of this module to routines that will be called inside an
+;; generator or otherwise, possibly in terms of generators of lower level, atomic components, principal
+;; among which is the use of natural-number/c for the duration-length contract which gets transmuted into
+;; (non-empty-listof pitch/c) where a list of more than one pitch/c still represents one attack to be
+;; eventually be translate into a Note with a possibly non-empty list of control/c with all but the laast
+;; having #t for Note-tie, but that's only for a later step that lifts generic components into concrete
+;; instances of voice-event/c
+;;
+;; 
+
+;; (define maybe-pitch&natural/c
+;;   (make-flat-contract #:name 'maybe-pitch&natural/c #:first-order (cons/c maybe-pitch/c natural?)))
+
+;; (define maybe-pitch&naturals/c
+;;   (make-flat-contract #:name 'maybe-pitch&naturals/c #:first-order (listof maybe-pitch&natural/c)))
+
+;; (define/contract (align-event-durations time-signature events)
+;;   (-> time-signature/c (listof maybe-pitch&natural/c) (listof (listof maybe-pitch&natural/c)))
+;;   (define/contract (adjust-event-durations event pr)
+;;     (-> maybe-pitch&natural? (cons/c natural? maybe-pitch&naturals/c) (cons/c natural? maybe-pitch&naturals/c))
+;;     (let ([curlen (car pr)]
+;;           [ret    (cdr pr)])
+;;       '()))
+;;   (define/contract (adjust-events-durations events pr)
+;;     (-> maybe-pitch&naturals/c (cons/c natural? maybe-pitch&naturals) (cons/c natural? maybe-pitch&naturals))
+;;     (let ([curlen (car pr)]
+;;           [ret    (cdr pr)])
+;;       (if (cdar event)
+;;           (let* ([addlen (apply + (map (compose duration->int cdr ...)) events)]
+;;                  [dur-lens 
+;;                  []))
+;;           '())))
+;;   (flatten (cdr (foldl adjust-events-durations (cons 0 '()) (group-by cdar events)))))
+
 ;; using time-signature and list of voice-events, arrange the durations
 ;; to reflect the inner beat and measure divisions
 ;; * for list of one or more rests, aggregate the duration for all rests
@@ -205,7 +282,7 @@
 ;;   for the inner (tied) note or notes
 (define/contract (align-voice-events-durations time-sig voice-events)
   (-> time-signature/c (listof voice-event/c) (listof voice-event/c))
-  (let ([ve-groups (group-by Rest? voice-events)])
+  (let ([ve-groups (group-by-adjacent-sequences (lambda (x y) (and (Rest? x) (Rest? y))) voice-events)])
     (define (adjvedurs voice-event pr)
       (let ([curlen (car pr)]
             [ves    (cdr pr)])
@@ -220,7 +297,7 @@
                       [chords (spread-durs voice-event durs)])
                  (cons (+ curlen addlen) (append ves chords)))]
               [else
-               ;; Tuplet: treat integrally with durs as is
+               ;; Tuplet, Spacer: treat integrally with durs as is
                ;; KeySignature, clef: zero-dur from voice-event->duration-int
                (let ([addlen (voice-event->duration-int voice-event)])
                  (cons (+ curlen addlen) (list voice-event)))])))
