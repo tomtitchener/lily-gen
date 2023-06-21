@@ -22,7 +22,7 @@
  ;; contracts 
  (contract-out
   [duration->int  (-> symbol? natural-number/c)]
-  [int->durations (-> natural-number/c (listof natural-number/c))]))
+  [int->durations (-> natural-number/c (listof duration?))]))
 
 ;; - - - - - - - - -
 ;; implementation

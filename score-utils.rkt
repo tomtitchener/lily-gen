@@ -22,6 +22,7 @@
   (match voice-event
     [(Note _ _ dur _ _) (duration->int dur)]
     [(Rest dur)         (duration->int dur)]
+    [(Spacer dur)       (duration->int dur)]
     [(Chord _ dur _ _)  (duration->int dur)]
     [(Tuplet _ _ dur _) (duration->int dur)]
     [(KeySignature _ _) 0]

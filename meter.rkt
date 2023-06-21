@@ -93,7 +93,7 @@
 ;; 5) compute list of durs for first bar given spillover as curlen, initial addlen
 ;; 6) compute list of list of dur lens for successive bars given remaining addlen bar by
 ;;    bar until remaining addlen goes to zero
-(define/contract (add-end-durs-for-time-sig timesig tot-curlen tot-addlen)
+(define/contract (add-end-durs-for-time-signature timesig tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
   (let* ([num-denom-gen (time-signature->num-denom-generator timesig)]                                           ;; 1
          [spilllen      (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]                               ;; 2
@@ -147,7 +147,7 @@
 ;; * ties for all note-or-chord except the last,
 ;; * controls only for the first
 ;; called when dur for note or chord spans beat or bar divisions
-(define/contract (spread-durs note-or-chord durs)
+(define/contract (spread-note-or-chord-durations note-or-chord durs)
   (-> (or/c Note? Chord?) (listof duration?) (listof (or/c Note? Chord?)))
   (let ([copy-note-or-chord
          (lambda (note-or-chord dur controls tie)
@@ -164,14 +164,14 @@
              [(Chord _ _ controls _)
               controls]))])
     (cond [(= 1 (length durs))
-           (list note-or-chord)]
+           (list (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #f))]
           [(= 2 (length durs))
            (cons (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #t)
                  (list (copy-note-or-chord note-or-chord (cadr durs) '() #f)))]
           [else
            (let* ([start    (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #t)]
                   [mid-durs (take (cdr durs) (- (length (cdr durs)) 1))]
-                  [middle   (map (lambda (dur) (copy-note-or-chord note-or-chord (car durs) '() #t)) mid-durs)]
+                  [middle   (map (lambda (dur) (copy-note-or-chord note-or-chord dur '() #t)) mid-durs)]
                   [end      (copy-note-or-chord note-or-chord (last durs) '() #f)])
              (cons start (append middle (list end))))])))
 
@@ -310,37 +310,7 @@
   (check-true (adjacent-rests-or-tied-notes-or-chords? tied-note not-tied-note))
   (check-true (adjacent-rests-or-tied-notes-or-chords? tied-chord tied-chord))
   (check-true (adjacent-rests-or-tied-notes-or-chords? tied-chord not-tied-chord))
-  ;; build list of voice-event with some adjacent rests, some tied notes, some tied chords
-  ;; mixed in with individual untied notes and chords, try
-  ;; (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
-  (define spacer (Spacer 'Q))
-  (define voice-events (list spacer not-tied-note not-tied-note tied-note not-tied-note spacer spacer not-tied-chord not-tied-note tied-chord not-tied-chord tied-chord not-tied-chord not-tied-note not-tied-note))
-  (check-equal?
-   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
-   (list
-    (list (Spacer 'Q))
-    (list (Note 'C '0va 'Q '() #f))
-    (list (Note 'C '0va 'Q '() #f))
-    (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f))
-    (list (Spacer 'Q))
-    (list (Spacer 'Q))
-    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
-    (list (Note 'C '0va 'Q '() #f))
-    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
-    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
-    (list (Note 'C '0va 'Q '() #f))
-    (list (Note 'C '0va 'Q '() #f))))
   )
-
-;; at the very least, align-voice-events-and-durations has to allow for tied notes or chords
-;; which in practical terms means first grouping by two Rest? in a row or else a special 
-;; binary comparison with an accumulator that remembers its already seen at least one rest
-;; so it knows to take one last note or chord that isn't tied so the list is of uniform
-;; tied notes or chords where the last one does not have the tied flag set, and *those* are
-;; what I need to process in the aggregate the same way I do for a list of Rest.
-;; Or maybe just a regular binop that says the first is a note that is tied and the
-;; second is a note that is isn't tied OR the first is a chord that is tied and the second
-;; is a chord that is or isn't tied.
 
 ;; using time-signature and list of voice-events, arrange the durations
 ;; to reflect the inner beat and measure divisions
@@ -349,50 +319,167 @@
 ;; * for list of one or more other voice events, split individual note
 ;;   or chords into a list of tied note or chords, suppressing the controls
 ;;   for the inner (tied) note or notes
-(define/contract (align-voice-events-durations time-sig voice-events)
+(define/contract (align-voice-events-durations time-signature voice-events)
   (-> time-signature/c (listof voice-event/c) (listof voice-event/c))
+  ;; inner fold over (should be) single-item lists of voice-event
+  (define (adjvedurs voice-event pr)
+    (let ([curlen (car pr)]
+          [ves    (cdr pr)])
+      ;; individual Rest, Note, or Chord durations might traverse beat or bar divisions 
+      (cond [(Rest? voice-event)
+             (let* ([addlen (duration->int (Rest-dur voice-event))]
+                    [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
+                    [rests  (map Rest durs)])
+               (cons (+ curlen addlen) (append ves rests)))]
+            [(or (Note? voice-event)
+                 (Chord? voice-event))
+             (let* ([addlen          (voice-event->duration-int voice-event)]
+                    [durs            (add-end-durs-for-time-signature time-signature curlen addlen)]
+                    [notes-or-chords (spread-note-or-chord-durations voice-event durs)])
+               (cons (+ curlen addlen) (append ves notes-or-chords)))]
+            [else
+             ;; Tuplet, Spacer: treat integrally with durs as is
+             ;; KeySignature, clef: zero-dur from voice-event->duration-int
+             (let ([addlen (voice-event->duration-int voice-event)])
+               (cons (+ curlen addlen) (list voice-event)))])))
+  ;; outer fold over grouping of voice-events by rest or 
+  (define (adjvesdurs ve-group pr)
+    (let ([curlen (car pr)]
+          [ves    (cdr pr)])
+      (cond
+        ;; special handling for lists of Rest, Note, and Chord:
+        ;; - sum durations then use that to get the list of durations 
+        ;;   for the time-signature and sum durations from the start
+        ;; - for list of Rest, map Rest to each of durations (no ties)
+        ;; - for list of Note or Chord call spread-note-or-chord-durations
+        ;;   to copy controls and distribute ties
+        [(and (> (length ve-group) 1)
+              (Rest? (car ve-group)))
+         (let* ([addlen (apply + (map voice-event->duration-int ve-group))]
+                [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
+                [rests  (map Rest durs)])
+           (cons (+ curlen addlen) (append ves rests)))]
+        [(and (> (length ve-group) 1)
+              (or (Note? (car ve-group))
+                  (Chord? (car ve-group))))
+         (let* ([addlen (apply + (map voice-event->duration-int ve-group))]
+                [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
+                [notes-or-chords (spread-note-or-chord-durations (car ve-group) durs)])
+           (cons (+ curlen addlen) (append ves notes-or-chords)))]
+        ;; remaining lists are all one item long of Note or Chord (no ties), Rest
+        ;; or zero-duration voice-events like KeySignature or clef
+        ;; fold over them to be sure, distributing rest, note, and chord durations
+        ;; according to beat and bar
+        [else
+         (let ([pr2 (foldl adjvedurs (cons curlen '()) ve-group)])
+           (cons (car pr2) (append ves (cdr pr2))))])))
+  ;; fold over ve-groups as (list (listof voice-event)) where rests, tied notes, and 
+  ;; tied chords are grouped together and everything else is in a singleton list
   (let ([ve-groups (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)])
-    (define (adjvedurs voice-event pr)
-      (let ([curlen (car pr)]
-            [ves    (cdr pr)])
-        (cond [(Note? voice-event)
-               (let* ([addlen     (duration->int (Note-dur voice-event))]
-                      [durs       (add-end-durs-for-time-sig time-sig curlen addlen)]
-                      [notes      (spread-durs voice-event durs)])
-                 (cons (+ curlen addlen) (append ves notes)))]
-              [(Chord? voice-event)
-               (let* ([addlen (duration->int (Chord-dur voice-event))]
-                      [durs   (add-end-durs-for-time-sig time-sig curlen addlen)]
-                      [chords (spread-durs voice-event durs)])
-                 (cons (+ curlen addlen) (append ves chords)))]
-              [else
-               ;; Tuplet, Spacer: treat integrally with durs as is
-               ;; KeySignature, clef: zero-dur from voice-event->duration-int
-               (let ([addlen (voice-event->duration-int voice-event)])
-                 (cons (+ curlen addlen) (list voice-event)))])))
-    (define (adjvesdurs ve-group pr)
-      (let ([curlen (car pr)]
-            [ves    (cdr pr)])
-        (cond [(Rest? (car ve-group))
-               (let* ([addlen (apply + (map (compose duration->int Rest-dur) ve-group))]
-                      [durs   (add-end-durs-for-time-sig time-sig curlen addlen)]
-                      [rests  (map Rest durs)])
-                 (cons (+ curlen addlen) (append ves rests)))]
-              [else
-               (let ([pr2 (foldl adjvedurs (cons curlen '()) ve-group)])
-                 (cons (car pr2) (append ves (cdr pr2))))])))
-    (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups)))))
+    (let* ([pr (foldl adjvesdurs (cons 0 '()) ve-groups)]
+           [rets (cdr pr)]
+           [ret (flatten rets)])
+      (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups)))
+      )))
 
-(define/contract (align-voice-durations time-sig voice)
+(module+ test
+  (require rackunit)
+  ;; build list of voice-event with some adjacent rests, some tied notes, some tied chords
+  ;; mixed in with individual untied notes and chords, try
+  ;; (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+  (define rest (Rest 'E))
+  (define voice-events (list rest
+                             not-tied-note
+                             not-tied-note
+                             tied-note
+                             not-tied-note
+                             rest
+                             rest
+                             not-tied-chord
+                             not-tied-note
+                             rest
+                             tied-chord not-tied-chord
+                             tied-chord not-tied-chord
+                             tied-chord tied-chord not-tied-chord
+                             not-tied-note
+                             not-tied-note))
+  (check-equal?
+   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+   (list
+    (list (Rest 'E))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f))
+    (list (Rest 'E) (Rest 'E))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Rest 'E))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #t) (Chord '((C . 0va) (C . 8va)) 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))))
+
+  (let ([voice-events (list rest
+                            not-tied-note
+                            not-tied-note
+                            tied-note
+                            not-tied-note)])
+    (check-equal?
+     (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+     (list
+      (list (Rest 'E))
+      (list (Note 'C '0va 'Q '() #f))
+      (list (Note 'C '0va 'Q '() #f))
+      (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f)))))
+  
+  ;; simple adjustment to distribute quarter notes over beats in 4/4
+  (define four-four-time-signature (TimeSignatureSimple 4 'Q))
+  (let ([voice-events (list rest
+                            not-tied-note
+                            not-tied-note
+                            not-tied-note
+                            not-tied-note)])
+    (check-equal?
+     (align-voice-events-durations four-four-time-signature voice-events)
+     (list
+      (Rest 'E)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f))))
+
+  (let ([voice-events (list rest
+                            not-tied-note
+                            not-tied-note
+                            tied-note
+                            not-tied-note)])
+    (check-equal?
+     (align-voice-events-durations four-four-time-signature voice-events)
+     (list
+      (Rest 'E)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'E '() #f)
+      (Note 'C '0va 'E '() #t)
+      (Note 'C '0va 'Q '() #t)
+      (Note 'C '0va 'E '() #f)))))
+
+(define/contract (align-voice-durations time-signature voice)
   (-> time-signature/c voice/c voice/c)
   (match voice
     [(PitchedVoice instr voice-events)
-     (PitchedVoice instr (align-voice-events-durations time-sig voice-events))]
+     (PitchedVoice instr (align-voice-events-durations time-signature voice-events))]
     [(KeyboardVoice instr voice-events-pr)
-     (KeyboardVoice instr (cons (align-voice-events-durations time-sig (car voice-events-pr))
-                                (align-voice-events-durations time-sig (cdr voice-events-pr))))]
+     (KeyboardVoice instr (cons (align-voice-events-durations time-signature (car voice-events-pr))
+                                (align-voice-events-durations time-signature (cdr voice-events-pr))))]
     [(SplitStaffVoice instr voice-events)
-     (SplitStaffVoice instr (align-voice-events-durations time-sig voice-events))]))
+     (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
   
 (define (extend&align-voices-group-durations voices-group)  
   (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
