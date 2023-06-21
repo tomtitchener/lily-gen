@@ -1,6 +1,6 @@
 #lang racket
 
-;; symbol lists and predicates, get used in text to create atoms in Score
+;; score-syms: symbol lists and predicates, get used in text to create atoms in Score
 
 (provide
  ;; all are either (listof symbol?) or (-> symbol? boolean?)

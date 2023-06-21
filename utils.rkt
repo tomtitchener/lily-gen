@@ -1,6 +1,6 @@
 #lang racket
 
-;; routines with no internal dependencies
+;; utils: routines with no internal dependencies
 
 (provide
  (contract-out
@@ -64,7 +64,10 @@
    (take-while (sum<=? identity 10) (range 1 50))
    '(1 2 3 4)))
 
-;; group sequentially by binary predicate
+;; group sequentially by binary predicate similar to Haskell groupBy
+;; but distinct from racket group-by, binary predicate lets me group
+;; adjacent Note or Rest to recognize beginning and end of lists of
+;; tied notes
 (define (group-by-adjacent-sequences binp xs)
   (define f (lambda (x acc)
               (let ([cur (car acc)]

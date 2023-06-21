@@ -1,5 +1,6 @@
 #lang racket
 
+;; scale:
 ;; 1) Scale struct, and scales:
 ;; - chromatic
 ;; - major and harmonic minor

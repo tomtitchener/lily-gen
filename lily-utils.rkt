@@ -1,6 +1,6 @@
 #lang racket
 
-;; convert symbols for lilypond atoms to lilypond strings
+;; lily-utils: convert symbols for lilypond atoms to lilypond strings
 
 (provide
  ;; all these are the same signature, (-> symbol? string?)

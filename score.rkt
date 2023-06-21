@@ -1,7 +1,9 @@
 #lang racket
 
-;; Score and contained structs, contracts for pitch and sums, predicates and syms from score-syms.rkt
-;; goal is to capture all data and data predicates contained in score
+;; score: Score and contained structs, contracts for pitch and sums,
+;; predicates and syms from score-syms.rkt
+;; capture all data and data predicates contained in Score and
+;; forward all from score-sym.rkt
 
 (provide
  ;; - - - - - - - - -

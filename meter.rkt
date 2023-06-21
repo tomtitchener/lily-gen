@@ -1,17 +1,24 @@
 #lang racket
 
-;; * add rests to the end of all voices to fill in the last measure
-;;   for the longest voice if necessary
-;; * align durations in each VoicesGroup voice to reflect meter
-;;   e.g. by adding ties
-;; assumes:
-;; * durations for voice-events in voice aren't optimized for beats
-;;   in the bar or bar length
-;; * voices may be of different lengths
-;; * total duration voice-events without ties for the output equals
-;;   total duration of voice-events without ties for the input
+;; meter:
+;;
+;; align durations from (listof voice-event/c) to reflect meter
+;; (instead of relying on lilypond)
+;; - low-level for time-signature/c and (listof voice-event/c),
+;; - per-voice to extract (listof voice-event/c) (maybe multiple) from voice
+;;
+;; - extend (listof (listof voice-event/c)) so all voices end at the end 
+;;   of the same bar
+;;
+;; - combine the extend and align behaviors for VoicesGroup
 
 (provide
+ (contract-out
+  [align-voice-events-durations (-> time-signature/c (listof voice-event/c) (listof voice-event/c))])
+ (contract-out
+  [align-voice-durations (-> time-signature/c voice/c voice/c)])
+ (contract-out
+  [extend-voices-durations (-> time-signature/c (listof voice/c) (listof voice/c))])
  (contract-out
   [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
 
@@ -51,10 +58,10 @@
 ;; response list, else for a note then a note with ties per duration except for the last
 ;; note: if input addlen exceeds length of a single bar, this will chew threw all of it
 ;; assuming a repeated sequence of num denom time in the remaining bars
-(define/contract (add-end-durs-for-num&denom num denom curLen addLen)
-  (-> natural-number/c duration? natural-number/c natural-number/c (listof duration?))
-  (let* ([beatLen (duration->int denom)]
-         [barLen  (* num beatLen)])
+(define/contract (add-end-durs-for-num&denom num-denom-pr curLen addLen)
+  (-> num-denom/c natural-number/c natural-number/c (listof duration?))
+  (let* ([beatLen (duration->int (cdr num-denom-pr))]
+         [barLen  (* (car num-denom-pr) beatLen)])
     (let accum ([cur curLen]
                 [add addLen]
                 [acc '()])
@@ -85,28 +92,31 @@
           [else (error 'add-end-durs-for-num&denom "beatLen: ~v barLen: ~v remBeat: ~v remBar: ~v cur: ~v add: ~v acc: ~v"
                        beatLen barLen remBeat remBar cur add acc)])))))
 
-;; first, compute first bar list of dur lens given time signature and tot-curlen 
+;; given time-signature, duration total so far (tot-curlen) and duration total to add (tot-addlen)
+;; answer list of durations that fill tot-addlen with respect to the current beat and bar length
 ;; 1) convert the meter or meters in timesig to a cycle of num denom pairs for simple time sigs
-;; 2) advance cycle past tot-curlen to first partial bar, answer dur len from start (spilllen)
-;; 3) compute durlen from spilllen to end of first bar
-;; 4) initial amount to add is minimum of tot-addlen and durlen to end of bar
-;; 5) compute list of durs for first bar given spillover as curlen, initial addlen
+;; 2) advance cycle past tot-curlen to current bar, answer dur len from start of current bar
+;;   (spill-len, may be 0)
+;; 3) compute durlen from spill-len to end of first bar (rem-bar)
+;; 4) initial amount to add is minimum of tot-addlen and durlen to end of bar (init-addlen)
+;; 5) compute list of durs for first bar given spillover as curlen, initial addlen (init-durs)
 ;; 6) compute list of list of dur lens for successive bars given remaining addlen bar by
-;;    bar until remaining addlen goes to zero
+;;    bar until remaining addlen goes to zero (succ-durs)
 (define/contract (add-end-durs-for-time-signature timesig tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
-  (let* ([num-denom-gen (time-signature->num-denom-generator timesig)]                                           ;; 1
-         [spilllen      (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]                               ;; 2
+  (let* ([num-denom-gen (time-signature->num-denom-generator timesig)]                    ;; 1
+         [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]        ;; 2
          [num-denom-pr  (num-denom-gen)]
-         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spilllen)]                                        ;; 3
-         [init-addlen   (min tot-addlen rem-bar)]                                                                ;; 4
-         [init-durs     (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) spilllen init-addlen)] ;; 5
-         [succ-durs     (let inner ([rem-addlen (- tot-addlen init-addlen)])                                     ;; 6
+         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)]                ;; 3
+         [init-addlen   (min tot-addlen rem-bar)]                                         ;; 4
+         [init-durs     (add-end-durs-for-num&denom num-denom-pr spill-len init-addlen)]  ;; 5
+         [succ-durs     (let inner ([rem-addlen (- tot-addlen init-addlen)])              ;; 6
                           (if (zero? rem-addlen)
                               '()
                               (let* ([num-denom-pr (num-denom-gen)]
-                                     [inner-addlen (min rem-addlen (num-denom-pr->barlen num-denom-pr))])
-                                (cons (add-end-durs-for-num&denom (car num-denom-pr) (cdr num-denom-pr) 0 inner-addlen)
+                                     [bar-len      (num-denom-pr->barlen num-denom-pr)]
+                                     [inner-addlen (min rem-addlen bar-len)])
+                                (cons (add-end-durs-for-num&denom num-denom-pr 0 inner-addlen)
                                       (inner (- rem-addlen inner-addlen))))))])
     (apply append (cons init-durs succ-durs))))
 
@@ -124,8 +134,7 @@
      (SplitStaffVoice instr (append voice-events (durlen->rests (car added-durlens))))]))
 
 ;; add rests to the end of voice-events to carry all voices to the end of the last measure
-(define/contract (extend-voices-durations time-sig voices)
-  (-> time-signature/c (listof voice/c) (listof voice/c))
+(define (extend-voices-durations time-sig voices)
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
          [voices-total-durlenss (map voice->total-durs voices)]
          ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
@@ -175,104 +184,6 @@
                   [end      (copy-note-or-chord note-or-chord (last durs) '() #f)])
              (cons start (append middle (list end))))])))
 
-;; bug: Note and Rest require duration? which can only be one of discrete e.g. non-tied values '(W. W H. H .. HTE)
-;; separation into integral rests is ok because you never tie between rests
-;; but if I stick to Note I have to be prepared to aggregate tied notes which is the only way to make arbitrary
-;; length notes
-;; but I don't deal with ties below at all, in fact, I'll arbitrary suppress them depending on whether or not I
-;; split the note into a list of tied notes
-;; so that's just a bug, but it calls into question the likely practice of the generation of a list of note or rest
-;; events, which is likely to consume arbitrary duration lengths in units of 128th notes
-;; which is what I believe I did in my Haskell implmentation, which was to leave durations as duration values in
-;; the base types and to assume at the point of lilypond output they'd been reduced to the discrete values, with
-;; ties between notes if necessary
-;; do I want to preserve this boundary and replicate the DurationVal type from Haskell which is sort of a two-faced
-;; solution as it allows for things to blow up at the lilypond generation level after you've gone to all the trouble
-;; of enconding an instance of the Score type?
-;;
-;; it's a pretty big dividing point because as things stand now, all the work below misses the point and it's going
-;; to take some thoughtful reworking to fix
-;; as the Haskell implementation stands it's a bit of a lie because of the DurationVal embedded in the Score type
-;; in my past Scheme experiments though I've never implemented the distribution of durations to reflect beats and
-;; bars, though I have plenty of code that treats with more abstract levels of data like the duration length, which
-;; gets resolved at a later stage to a list of one or more rests or tied notes which is what would better in terms
-;; of pipelining
-;;
-;; which asks the question, what do I want the pipelining to be then, what are the stages in assembling as score?
-;; I could have a point where I pick a duration and map it to a list of one or more notes or durations where the
-;; notes are tied and then I have to deal with tied notes below, which I don't currently do
-;; or I could have an intermediate form that indicates a pitch or a rest along with an arbitrary natural? for a
-;; duration in units of 128th notes
-;; that's intuitively more appealing because at that level I'm working with atoms anyway, likely including
-;; optional maybe accents and/or maybe dynamics
-;; in which case this code needs to shift down a level to deal with lists just the pitch/rest and duration with
-;; input of (cons/c (or/c pitch/c #f) natural?) and output of (listof (or/c Note? Rest?)) where adjacent notes
-;; may or may not be tied
-;; or maybe the conversion could retain the level of focus and convert (listof (cons/c (or/c pitch/c #f) natural?))
-;; to (listof (listof (cons/c (or/c pitch/c #f) duration?))) where adjacent (pitch/c . duration?) pairs are to be
-;; tied and adjacent (#f . duration?) are integral units to be eventually converted to Rest (or Spacer)
-;; what about Keyboard voice?
-;;
-;; or maybe seeing as I'm really reducing the number space for the natural-number to only those values allowed by
-;; duration? then I might as well go
-;; (-> (listof maybe-pitch&natural/c) (listof (or/c Note? Rest?)) 
-;; where tied as needed to match the time-signature and the intermediate stage would be
-;; (-> (listof maybe-pitch&natural/c) (listof (listof maybe-pitch&duration/c))) where inner lists 
-;; of more than one pitch would be translated into a series of tied notes and rests would just be flattened
-;;
-;; but what that list of pitch implies is a single attack or envelope which is where I'd want to attach controls
-;; so the meaningful division is between events that can be decorated with controls vs. events that lack controls
-;;
-;; note furthermore the need to capture the generator pattern as part of this
-;; I currently assume a complete list as input but maybe what I'm sourcing is a generators of the components
-;; which in this case wold be (cons/c maybe-pitch/c natural-number/c)
-;;
-;; the problem with that is I need to have a complete list in order to determine total length to append the
-;; rests to the ending bar
-;;
-;; which seems like premature optimization really, as during the accumulation of the components that make up
-;; a list of note-or-rest voice-events there's no reason I can't consume incrementally from source generators
-;; of the atoms which here I propose as maybe-note and duration maybe including controls as a sub-generator
-;; for the note path, all subject to eventual termination with e.g. generate-while which could stop when the
-;; next duration would cause the running total to exceed a mximum value
-;;
-;; and then at *that* point I can decide whether to clip the voice-events by end of the last bar for the
-;; shortest or to extend all voices with rests to match the end of the bar after longest
-;;
-;; all of these sharply redraws the contents of this module to routines that will be called inside an
-;; generator or otherwise, possibly in terms of generators of lower level, atomic components, principal
-;; among which is the use of natural-number/c for the duration-length contract which gets transmuted into
-;; (non-empty-listof pitch/c) where a list of more than one pitch/c still represents one attack to be
-;; eventually be translate into a Note with a possibly non-empty list of control/c with all but the laast
-;; having #t for Note-tie, but that's only for a later step that lifts generic components into concrete
-;; instances of voice-event/c
-;;
-;; 
-
-;; (define maybe-pitch&natural/c
-;;   (make-flat-contract #:name 'maybe-pitch&natural/c #:first-order (cons/c maybe-pitch/c natural?)))
-
-;; (define maybe-pitch&naturals/c
-;;   (make-flat-contract #:name 'maybe-pitch&naturals/c #:first-order (listof maybe-pitch&natural/c)))
-
-;; (define/contract (align-event-durations time-signature events)
-;;   (-> time-signature/c (listof maybe-pitch&natural/c) (listof (listof maybe-pitch&natural/c)))
-;;   (define/contract (adjust-event-durations event pr)
-;;     (-> maybe-pitch&natural? (cons/c natural? maybe-pitch&naturals/c) (cons/c natural? maybe-pitch&naturals/c))
-;;     (let ([curlen (car pr)]
-;;           [ret    (cdr pr)])
-;;       '()))
-;;   (define/contract (adjust-events-durations events pr)
-;;     (-> maybe-pitch&naturals/c (cons/c natural? maybe-pitch&naturals) (cons/c natural? maybe-pitch&naturals))
-;;     (let ([curlen (car pr)]
-;;           [ret    (cdr pr)])
-;;       (if (cdar event)
-;;           (let* ([addlen (apply + (map (compose duration->int cdr ...)) events)]
-;;                  [dur-lens 
-;;                  []))
-;;           '())))
-;;   (flatten (cdr (foldl adjust-events-durations (cons 0 '()) (group-by cdar events)))))
-
 (define/contract (adjacent-rests? a b)
   (-> voice-event/c voice-event/c boolean?)
   (and (Rest? a) (Rest? b)))
@@ -319,29 +230,29 @@
 ;; * for list of one or more other voice events, split individual note
 ;;   or chords into a list of tied note or chords, suppressing the controls
 ;;   for the inner (tied) note or notes
-(define/contract (align-voice-events-durations time-signature voice-events)
-  (-> time-signature/c (listof voice-event/c) (listof voice-event/c))
+(define (align-voice-events-durations time-signature voice-events)
   ;; inner fold over (should be) single-item lists of voice-event
   (define (adjvedurs voice-event pr)
     (let ([curlen (car pr)]
           [ves    (cdr pr)])
       ;; individual Rest, Note, or Chord durations might traverse beat or bar divisions 
-      (cond [(Rest? voice-event)
-             (let* ([addlen (duration->int (Rest-dur voice-event))]
-                    [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
-                    [rests  (map Rest durs)])
-               (cons (+ curlen addlen) (append ves rests)))]
-            [(or (Note? voice-event)
-                 (Chord? voice-event))
-             (let* ([addlen          (voice-event->duration-int voice-event)]
-                    [durs            (add-end-durs-for-time-signature time-signature curlen addlen)]
-                    [notes-or-chords (spread-note-or-chord-durations voice-event durs)])
-               (cons (+ curlen addlen) (append ves notes-or-chords)))]
-            [else
-             ;; Tuplet, Spacer: treat integrally with durs as is
-             ;; KeySignature, clef: zero-dur from voice-event->duration-int
-             (let ([addlen (voice-event->duration-int voice-event)])
-               (cons (+ curlen addlen) (list voice-event)))])))
+      (match voice-event
+        [(Rest dur)
+         (let* ([addlen (duration->int dur)]
+                [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
+                [rests  (map Rest durs)])
+           (cons (+ curlen addlen) (append ves rests)))]
+        [(or (Note _ _ dur _ _) (Chord _ dur _ _))
+         (let* ([addlen (duration->int dur)]
+                [durs    (add-end-durs-for-time-signature time-signature curlen addlen)]
+                [notes-or-chords (spread-note-or-chord-durations voice-event durs)])
+           (cons (+ curlen addlen) (append ves notes-or-chords)))]
+        [(or (Spacer _) (Tuplet _ _ _ _) (KeySignature _ _) (? clef?) _)
+         ;; Tuplet, Spacer: treat integrally with durs as is
+         ;; KeySignature, clef: zero-dur from voice-event->duration-int
+         (let ([addlen (voice-event->duration-int voice-event)])
+           (cons (+ curlen addlen) (list voice-event)))])
+      ))
   ;; outer fold over grouping of voice-events by rest or 
   (define (adjvesdurs ve-group pr)
     (let ([curlen (car pr)]
@@ -470,8 +381,7 @@
       (Note 'C '0va 'Q '() #t)
       (Note 'C '0va 'E '() #f)))))
 
-(define/contract (align-voice-durations time-signature voice)
-  (-> time-signature/c voice/c voice/c)
+(define (align-voice-durations time-signature voice)
   (match voice
     [(PitchedVoice instr voice-events)
      (PitchedVoice instr (align-voice-events-durations time-signature voice-events))]

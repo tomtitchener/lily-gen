@@ -1,6 +1,6 @@
 #lang racket
 
-;; utilities that depend only on score and lily-utils
+;; score-utils: utilities that depend only on score and lily-utils
 
 (provide
  (contract-out
@@ -39,7 +39,7 @@
     [(SplitStaffVoice _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]))
 
-(define(time-signature->barlen time-sig)
+(define (time-signature->barlen time-sig)
   (match time-sig
     [(TimeSignatureSimple num denom)
      (* num (duration->int denom))]
