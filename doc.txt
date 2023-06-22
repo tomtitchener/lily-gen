@@ -24,3 +24,4 @@ generator but I'm not sure they're worth the effort of recording a vector in the
 
 Remember also progression by increasing intensity, e.g. for period use series like fibonacci, 
 e.g. 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, so the rate of change accelerates.  
+
