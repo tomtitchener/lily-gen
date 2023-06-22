@@ -123,7 +123,7 @@
 
 (define/contract (time-signature-grouping->lily time-signature)
   (-> TimeSignatureGrouping? string?)
-  (let ([groups (TimeSignatureGrouping-groups time-signature)]
+  (let ([groups (TimeSignatureGrouping-groups  time-signature)]
         [num    (TimeSignatureGrouping-num     time-signature)]
         [denom  (TimeSignatureGrouping-denom   time-signature)])
     (format "\\time ~a ~a/~a" (string-join (map number->string groups) ",") num (duration->lily denom))))
