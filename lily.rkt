@@ -1,9 +1,10 @@
 #lang at-exp racket
 
-;; convert Score to Lilypond string by traversing Score struct
-;; call with display to render newlines the output file
+;; lily: convert Score to Lilypond string by traversing Score 
+;; converting components to a string, use with display to render
+;; newlines the output file
 ;; note: only renders, need to prepare VoicesGroup voices
-;; with extend&align-voices-group-durations first
+;; with extend&align-voices-group-durations first, if needed.
 
 (provide
  (contract-out
