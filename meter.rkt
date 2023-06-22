@@ -121,9 +121,9 @@
     (apply append (cons init-durs succ-durs))))
 
 ;; require list of durs for voices with multiple staves (KeyboardVoice)
-(define/contract (add-rests-for-durlens tot-durlen voice added-durlens)
-  (-> natural? voice/c (listof natural?) voice/c)
-  (define (durlen->rests added-durlen) (map Rest (int->durations (tot-durlen - added-durlen))))
+(define/contract (add-rests-for-durlens voice added-durlens)
+  (-> voice/c (listof natural?) voice/c)
+  (define (durlen->rests added-durlen) (map Rest (int->durations added-durlen)))
   (match voice
     [(PitchedVoice instr voice-events)
      (PitchedVoice instr (append voice-events (durlen->rests (car added-durlens))))]
@@ -136,9 +136,9 @@
 ;; add rests to the end of voice-events to carry all voices to the end of the last measure
 (define (extend-voices-durations time-sig voices)
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
-         [voices-total-durlenss (map voice->total-durs voices)]
+         [voices-total-durlens (flatten (map voice->total-durs voices))]
          ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
-         [max-total-durlen      (apply max (map ((curry apply) max) voices-total-durlenss))]
+         [max-total-durlen      (apply max voices-total-durlens)]
          ;; len of bar
          [bar-durlen            (time-signature->barlen time-sig)]
          ;; given max total-durlen, how much spills over into the last bar for the max-total-durlen?
@@ -147,9 +147,8 @@
          [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
          ;; target total durlen is sum of max-total-durlen and last-bar-remainder
          [target-total-durlen   (+ max-total-durlen last-bar-remainder)]
-         ;; difference between per-voice total-durlenss and target-total-durlen is durlen to add for rests per voice
-         [voices-rem-durlenss   (map ((curry map) ((curry -) target-total-durlen)) voices-total-durlenss)])
-    (map ((curry add-rests-for-durlens) max-total-durlen) voices voices-rem-durlenss)))
+         [voices-rem-durlens    (map ((curry -) target-total-durlen) voices-total-durlens)])
+    (map (lambda (voice rem-durlen) (add-rests-for-durlens voice (list rem-durlen))) voices voices-rem-durlens)))
 
 ;; spread note-or-chord (except for dur) across all durs with pitch or pitches
 ;; from input with:
@@ -299,23 +298,23 @@
   ;; mixed in with individual untied notes and chords, try
   ;; (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
   (define rest (Rest 'E))
-  (define voice-events (list rest
-                             not-tied-note
-                             not-tied-note
-                             tied-note
-                             not-tied-note
-                             rest
-                             rest
-                             not-tied-chord
-                             not-tied-note
-                             rest
-                             tied-chord not-tied-chord
-                             tied-chord not-tied-chord
-                             tied-chord tied-chord not-tied-chord
-                             not-tied-note
-                             not-tied-note))
+  (define voice-events-1 (list rest
+                               not-tied-note
+                               not-tied-note
+                               tied-note
+                               not-tied-note
+                               rest
+                               rest
+                               not-tied-chord
+                               not-tied-note
+                               rest
+                               tied-chord not-tied-chord
+                               tied-chord not-tied-chord
+                               tied-chord tied-chord not-tied-chord
+                               not-tied-note
+                               not-tied-note))
   (check-equal?
-   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
+   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events-1)
    (list
     (list (Rest 'E))
     (list (Note 'C '0va 'Q '() #f))
@@ -331,55 +330,81 @@
     (list (Note 'C '0va 'Q '() #f))
     (list (Note 'C '0va 'Q '() #f))))
 
-  (let ([voice-events (list rest
-                            not-tied-note
-                            not-tied-note
-                            tied-note
-                            not-tied-note)])
-    (check-equal?
-     (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)
-     (list
-      (list (Rest 'E))
-      (list (Note 'C '0va 'Q '() #f))
-      (list (Note 'C '0va 'Q '() #f))
-      (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f)))))
+  (define voice-events-2 (list rest
+                               not-tied-note
+                               not-tied-note
+                               tied-note
+                               not-tied-note))
+  (check-equal?
+   (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events-2)
+   (list
+    (list (Rest 'E))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #f))
+    (list (Note 'C '0va 'Q '() #t) (Note 'C '0va 'Q '() #f))))
   
   ;; simple adjustment to distribute quarter notes over beats in 4/4
   (define four-four-time-signature (TimeSignatureSimple 4 'Q))
-  (let ([voice-events (list rest
-                            not-tied-note
-                            not-tied-note
-                            not-tied-note
-                            not-tied-note)])
-    (check-equal?
-     (align-voice-events-durations four-four-time-signature voice-events)
-     (list
-      (Rest 'E)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f))))
+  (define voice-events-3 (list rest
+                               not-tied-note
+                               not-tied-note
+                               not-tied-note
+                               not-tied-note))
+  (check-equal?
+   (align-voice-events-durations four-four-time-signature voice-events-3)
+   (list
+    (Rest 'E)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)))
 
-  (let ([voice-events (list rest
-                            not-tied-note
-                            not-tied-note
-                            tied-note
-                            not-tied-note)])
-    (check-equal?
-     (align-voice-events-durations four-four-time-signature voice-events)
-     (list
-      (Rest 'E)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'E '() #f)
-      (Note 'C '0va 'E '() #t)
-      (Note 'C '0va 'Q '() #t)
-      (Note 'C '0va 'E '() #f)))))
+  (define voice-events-4 (list rest
+                               not-tied-note
+                               not-tied-note
+                               tied-note
+                               not-tied-note))
+  (check-equal?
+   (align-voice-events-durations four-four-time-signature voice-events-4)
+   (list
+    (Rest 'E)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'E '() #f)
+    (Note 'C '0va 'E '() #t)
+    (Note 'C '0va 'Q '() #t)
+    (Note 'C '0va 'E '() #f)))
+  
+  (define voice-eventss-start (list voice-events-1 voice-events-2 voice-events-3 voice-events-4))
+  (define voice-events-durs-start (map (lambda (voice-events) (apply + (map voice-event->duration-int voice-events))) voice-eventss-start))
+  (define voices-start (map (lambda (voice-events) (PitchedVoice 'AcousticGrand voice-events)) voice-eventss-start))
+  (define voices-stop (extend-voices-durations four-four-time-signature voices-start))
+  (define voice-eventss-stop (map PitchedVoice-voiceevents voices-stop))
+  (define voice-events-durs-stop (map (lambda (voice-events) (apply + (map voice-event->duration-int voice-events))) voice-eventss-stop))
+  (define four-four-barlen (time-signature->barlen four-four-time-signature))
+
+  (check-true
+   (apply = voice-events-durs-stop)
+   (format "unequal voice-events-durs-stop ~v" voice-events-durs-stop))
+  (check-true
+   (andmap (lambda (dur-start dur-stop) (>= dur-stop dur-start)) voice-events-durs-start voice-events-durs-stop)
+   (format "voice-events-durs-stop ~v not all >= voice-events-durs-start ~v" voice-events-durs-stop voice-events-durs-start))
+  (check-true 
+   (andmap (lambda (dur-stop) (zero? (remainder dur-stop four-four-barlen))) voice-events-durs-stop)
+   (format "voice-events-durs-stop not all visible by barlen ~v" four-four-barlen)))
+
+(define (extend&align-voices-group-durations voices-group)  
+  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
+         ;; first extend all voices to end at the last bar line
+         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
+         ;; then align voice-event durations to reflect the meter
+         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
+    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
 
 (define (align-voice-durations time-signature voice)
   (match voice
@@ -391,14 +416,6 @@
     [(SplitStaffVoice instr voice-events)
      (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
   
-(define (extend&align-voices-group-durations voices-group)  
-  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
-         ;; first extend all voices to end at the last bar line
-         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
-         ;; then align voice-event durations to reflect the meter
-         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
-    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
-
 #|
 (define tpo (TempoDur 'Q 120))
 (define tsg (TimeSignatureSimple 4 'Q))
