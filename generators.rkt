@@ -1,28 +1,22 @@
 #lang racket
 
 ;; generators:
-;; 1) endlessly repeat elements of a list in order 
-;; 2) note or rest for as long as the shortest generator
+;; - note or rest for as long as the shortest generator
 ;; 
 ;; Utilities:
-;; 1) generate while predicate succeeds
+;; - generate while predicate succeeds e.g. up to some max total length
+;; - repeated generator for num-denom pairs a time-signature/c
 
 (provide
- ;; endlessly repeat elements of a list
  (contract-out
-  [cycle-generator (->* ((listof any/c)) (natural-number/c) generator?)])
+  ;; synthesize Note or Rest from three input generators, else void when any input generator is done
+  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) generator?)]
+  
+  ;; generate until predicate fails or generator-state is done
+  [generate-while (-> predicate/c generator? (listof any/c))]
 
- ;; synthesize Note or Rest from three input generators, else void when any generator is done
- (contract-out
-  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) generator?)])
- 
- ;; generate until predicate fails or generator-state is done
- (contract-out
-  [generate-while (-> predicate/c generator? (listof any/c))])
-
- (contract-out
-  [time-signature->num-denom-generator (-> time-signature/c generator?)])
- )
+  ;; endlessly generate num-denom pair(s) from time-signature
+  [time-signature->num-denom-generator (-> time-signature/c generator?)]))
 
 ;; - - - - - - - - -
 ;; implementation
@@ -30,13 +24,7 @@
 
 (require "score.rkt")
 
-;; (->* ((listof any/c)) (natural-number/c) generator?)
-(define (cycle-generator lst [start 0])
-  (let ([i start]
-        [l (length lst)])
-    (infinite-generator
-     (yield (list-ref lst (remainder i l)))
-     (set! i (add1 i)))))
+(require (only-in "utils.rkt" rotate-list-by))
 
 ;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
 (define (note-or-rest-generator pitch-or-f-gen durations-gen accent-or-f-gen)
@@ -55,28 +43,7 @@
            (yield (Note pitch octave duration controls #f)))
          (yield (Rest duration))))))
 
-;; convert the meter or meters in time-signature to a cycle of SimpleTimeSignature
-(define (time-signature->num-denom-generator timesig)
-  (match timesig
-    ;; TimeSignatureSimple is just a single-item list of a num denom pair
-    [(TimeSignatureSimple num denom)
-     (cycle-generator (list (cons num denom)))]
-    ;; TimeSignatureGrouping is a list of num denom pairs, one for each of nums
-    [(TimeSignatureGrouping nums _ denom)
-     (let ([num-denom-prs (map (lambda (num) (cons num denom)) nums)])
-       (cycle-generator num-denom-prs))]
-    ;; TimeSignatureGrouping is the concatenated list of list of num denom pairs
-    ;; with each inner list containing one list of num denom pairs per outer list
-    ;; of one or nums that ends with a denom
-    [(TimeSignatureCompound nums-denoms)
-     (let* ([num-denom-prss (map (lambda (nums-denom)
-                                   (let ([nums (take nums-denom (- (length nums-denom) 1))]
-                                         [denom (last nums-denom)])
-                                     (map (lambda (num) (cons num denom)) nums)))
-                                 nums-denoms)])
-       (cycle-generator (apply append num-denom-prss)))]))
-
-;; generate-while (-> predicate/c generator? (listof any/c))
+;; (-> predicate/c generator? (listof any/c))
 (define (generate-while pred gen)
   (let loop ()
     (let ([next (gen)])
@@ -84,15 +51,37 @@
             [(pred next) (cons next (loop))]
             [else '()]))))
 
+;; (-> time-signature/c generator?)
+(define (time-signature->num-denom-generator timesig)
+  (match timesig
+    ;; TimeSignatureSimple is just a single-item list of a num denom pair
+    [(TimeSignatureSimple num denom)
+     (sequence->repeated-generator (list (cons num denom)))]
+    ;; TimeSignatureGrouping is a list of num denom pairs, one for each of nums
+    [(TimeSignatureGrouping nums _ denom)
+     (let ([num-denom-prs (map (lambda (num) (cons num denom)) nums)])
+       (sequence->repeated-generator num-denom-prs))]
+    ;; TimeSignatureCompound is the concatenated list of list of num denom pairs
+    ;; with each inner list containing one list of num denom pairs per outer list
+    ;; of one or nums that ends with a denom
+    [(TimeSignatureCompound nums-denoms)
+     (let* ([num-denom-prs (map (lambda (nums-denom)
+                                  (let ([nums (take nums-denom (- (length nums-denom) 1))]
+                                        [denom (last nums-denom)])
+                                    (map (lambda (num) (cons num denom)) nums)))
+                                nums-denoms)])
+       (sequence->repeated-generator (apply append num-denom-prs)))]))
+
 (module+ test
   (require rackunit)
   (require (only-in "utils.rkt" sum<=?))
   (require (only-in "score-utils.rkt" voice-event->duration-int))
-  (let* ([pitch-or-f-gen  (cycle-generator (list (cons 'C '0va) #f (cons 'E '0va)))]
-         [duration-gen    (cycle-generator '(E S S E S S))]
-         [accent-or-f-gen (cycle-generator '(Accent #f #f))]
+  (let* ([pitch-or-f-gen  (sequence->repeated-generator (list (cons 'C '0va) #f (cons 'E '0va)))]
+         [duration-gen    (sequence->repeated-generator '(E S S E S S))]
+         [accent-or-f-gen (sequence->repeated-generator '(Accent #f #f))]
          [note-or-rest-gen (note-or-rest-generator pitch-or-f-gen duration-gen accent-or-f-gen)]
-         [sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int 100)]
+         [max-duration-int 100]
+         [sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int max-duration-int)]
          [note-or-rests (generate-while sum-note-or-rest-durations<=? note-or-rest-gen)])
     (check-equal? note-or-rests
                  (list
@@ -105,6 +94,19 @@
                   (Note 'C '0va 'E '(Accent) #f)
                   (Rest 'S)
                   (Note 'E '0va 'S '() #f)))
-    (check <= (apply + (map voice-event->duration-int note-or-rests)) 100)))
+    (check <= (apply + (map voice-event->duration-int note-or-rests)) max-duration-int))
+  (let ([three-four-time-signature (TimeSignatureSimple 3 'Q)]
+        [seven-eight-time-signature (TimeSignatureGrouping (list 2 2 3) 7 'E)]
+        [seven-eight-six-eight-time-signature (TimeSignatureCompound (list (list 2 2 3 'E) (list 2 2 2 'E)))]
+        [length<=? (lambda (m) (sum<=? (lambda (_) 1) m))])
+    (check-equal? (generate-while (length<=? 3) (time-signature->num-denom-generator three-four-time-signature))
+                  (list (cons 3 'Q) (cons 3 'Q) (cons 3 'Q)))
+    (check-equal? (generate-while (length<=? 6) (time-signature->num-denom-generator seven-eight-time-signature))
+                  (list (cons 2 'E) (cons 2 'E) (cons 3 'E) (cons 2 'E) (cons 2 'E) (cons 3 'E)))
+    (check-equal? (generate-while (length<=? 9) (time-signature->num-denom-generator seven-eight-six-eight-time-signature))
+                  (list (cons 2 'E) (cons 2 'E) (cons 3 'E)
+                        (cons 2 'E) (cons 2 'E) (cons 2 'E)
+                        (cons 2 'E) (cons 2 'E) (cons 3 'E))))
+  )
 
 
