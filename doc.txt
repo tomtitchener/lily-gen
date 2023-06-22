@@ -1,18 +1,20 @@
 
 File hierarchy (6/13/2023):  8 files, 4 levels
 
-   meter           lily    scale
-  /  |  \         |    \    |  |
-  V  `-. \        V     \   |  V
-  gens |  `-> lily-utils \  |  utils
-   |   |         |       |  |
-   |   `-----.   | .-----'  |
-   |         |   | |        |
-   |         V   V V        |
-   `------->  score  <------'
-                |
-                V
-           score-syms
+   scale   meter           lily 
+   / |    /| |  \         |    \
+  '  |   / V `-. \        V     \
+  |  |  / gens |  `-> lily-utils \
+  |  | ' / |   |        |        |
+  |  | | | |   `-----.  |  .-----'
+  |  V V V |         |  |  |
+  |  utils |         V  V  V
+  |        |        .-------.
+  |        ` ------>| score |
+  `---------------->`-------'
+                        |
+                        V
+                   score-syms
 
 
 Re: random subsystem in Racket.  Want to use (random-seed (current-milliseconds)) to get started.

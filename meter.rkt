@@ -1,25 +1,21 @@
 #lang racket
 
-;; meter:
-;;
-;; align durations from (listof voice-event/c) to reflect meter
-;; (instead of relying on lilypond)
-;; - low-level for time-signature/c and (listof voice-event/c),
-;; - per-voice to extract (listof voice-event/c) (maybe multiple) from voice
-;;
-;; - extend (listof (listof voice-event/c)) so all voices end at the end 
-;;   of the same bar
-;;
-;; - combine the extend and align behaviors for VoicesGroup
+;; meter: manage listof voice-event/c in a voice/c to reflect the meter
+;; (needs a better name)
 
 (provide
  (contract-out
-  [align-voice-events-durations (-> time-signature/c (listof voice-event/c) (listof voice-event/c))])
- (contract-out
-  [align-voice-durations (-> time-signature/c voice/c voice/c)])
- (contract-out
-  [extend-voices-durations (-> time-signature/c (listof voice/c) (listof voice/c))])
- (contract-out
+  ;; rewrite voice-events with durations that reflect beat and bar divisions
+  ;; e.g. divide a 'Q. note that falls between beats in 4/4 into tied 'E and 'Q notes
+  [align-voice-events-durations (-> time-signature/c (listof voice-event/c) (listof voice-event/c))]
+  ;; map align-voice-events-durations over one or more lists of voice-event/c in a voice/c
+  [align-voice-durations (-> time-signature/c voice/c voice/c)]
+  ;; find the voice-event/c in the listof voice-event/c with the longest cumulative duration,
+  ;; determine the duration to finish the current measure,
+  ;; add rests to all listof voice-event/c to match the longest listof voice-event/c
+  [extend-voices-durations (-> time-signature/c (listof voice/c) (listof voice/c))]
+  ;; combine extend-voices-durations with align-voices-durations 
+  ;; for the listof voice/c in the VoicesGroup
   [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
 
 ;; - - - - - - - -
@@ -292,6 +288,24 @@
       (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups)))
       )))
 
+(define (align-voice-durations time-signature voice)
+  (match voice
+    [(PitchedVoice instr voice-events)
+     (PitchedVoice instr (align-voice-events-durations time-signature voice-events))]
+    [(KeyboardVoice instr voice-events-pr)
+     (KeyboardVoice instr (cons (align-voice-events-durations time-signature (car voice-events-pr))
+                                (align-voice-events-durations time-signature (cdr voice-events-pr))))]
+    [(SplitStaffVoice instr voice-events)
+     (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
+
+(define (extend&align-voices-group-durations voices-group)  
+  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
+         ;; first extend all voices to end at the last bar line
+         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
+         ;; then align voice-event durations to reflect the meter
+         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
+    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
+
 (module+ test
   (require rackunit)
   ;; build list of voice-event with some adjacent rests, some tied notes, some tied chords
@@ -398,36 +412,3 @@
    (andmap (lambda (dur-stop) (zero? (remainder dur-stop four-four-barlen))) voice-events-durs-stop)
    (format "voice-events-durs-stop not all visible by barlen ~v" four-four-barlen)))
 
-(define (extend&align-voices-group-durations voices-group)  
-  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
-         ;; first extend all voices to end at the last bar line
-         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
-         ;; then align voice-event durations to reflect the meter
-         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
-    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
-
-(define (align-voice-durations time-signature voice)
-  (match voice
-    [(PitchedVoice instr voice-events)
-     (PitchedVoice instr (align-voice-events-durations time-signature voice-events))]
-    [(KeyboardVoice instr voice-events-pr)
-     (KeyboardVoice instr (cons (align-voice-events-durations time-signature (car voice-events-pr))
-                                (align-voice-events-durations time-signature (cdr voice-events-pr))))]
-    [(SplitStaffVoice instr voice-events)
-     (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
-  
-#|
-(define tpo (TempoDur 'Q 120))
-(define tsg (TimeSignatureSimple 4 'Q))
-(define vevts (list (Note 'C '0va 'H '() #f) (Note 'F '0va 'H. '() #f)))
-(define pvc (PitchedVoice 'AcousticGrand vevts))
-(define pvc2 (PitchedVoice 'AcousticGrand (list (Note 'D '0va 'H. '() #f))))
-(define vgrp (VoicesGroup tpo tsg (list pvc pvc2)))
-(extend&align-voices-group-durations vgrp)
-(VoicesGroup
- (TempoDur 'Q 120)
- (TimeSignatureSimple 4 'Q)
- (list
-  (PitchedVoice 'AcousticGrand (list (Note 'C '0va 'H '() #f) (Note 'F '0va 'H '() #t) (Note 'F '0va 'Q '() #f) (Rest 'H.)))
-  (PitchedVoice 'AcousticGrand (list (Note 'D '0va 'H. '() #f) (Rest 'Q) (Rest 'W)))))
-|#
