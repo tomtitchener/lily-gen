@@ -8,6 +8,8 @@
 
 (provide
  (contract-out
+  ;; convert from a Score to a lilypond-formatted string,
+  ;; display to render newlines
   [score->lily (-> Score? string?)]))
          
 ;; - - - - - - - - -
@@ -230,6 +232,7 @@
         [voices         (VoicesGroup-voices         voice-group)])
     (string-join (map (lambda (voice) (voice->lily tempo time-signature voice)) voices))))
 
+;; (-> Score? string?)
 (define (score->lily score)
   (let ([title        (Score-title        score)]
         [seed         (Score-seed         score)]

@@ -4,16 +4,26 @@
 
 (provide
  (contract-out
-  [rotate-list-by (-> list? integer? list?)])
- (contract-out
-  [sum<=? (-> (-> any/c natural-number/c) natural-number/c (-> any/c boolean?))])
- (contract-out
+  ;; rotate list forward or backward for positive
+  ;; or negative value e.g. '(1 2 3) 1 -> '(2 3 1)
+  [rotate-list-by (-> list? signed-integer/c list?)]
+
+  ;; answer a thunk that accumulates successive any/c
+  ;; converted into a natural until total is >= target
+  ;; e.g. to take up to 10 items from a list,
+  ;; (take-while (sum<=? identity 10) (range 1 50))
+  [sum<=? (-> (-> any/c natural-number/c) natural-number/c (-> any/c boolean?))]
+
+  ;; group by sequential values that match a boolean predicate 
   [group-by-adjacent-sequences (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))]))
+
+(require binary-class/contract)
 
 ;; - - - - - - - - -
 ;; implementation
 
 ;; rotate list forward by cnt, e.g. given '(1 2 3) and 1, give '(2 3 1)
+;; [rotate-list-by (-> list? signed-integer/c list?)
 (define (rotate-list-by lst cnt)
   (let* ([l (length lst)]
          [c (modulo (abs cnt) l)])
@@ -52,6 +62,7 @@
 ;; - a function that takes any/c, converts it to a natural,
 ;;   adds it to a running total, and answers if the total is
 ;;   still <= the maximum
+;; (-> (-> any/c natural-number/c) natural-number/c (-> any/c boolean?))
 (define (sum<=? any->nat maximum)
   (let ([total 0])
     (lambda (any)
@@ -68,6 +79,7 @@
 ;; but distinct from racket group-by, binary predicate lets me group
 ;; adjacent Note or Rest to recognize beginning and end of lists of
 ;; tied notes
+;; (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))
 (define (group-by-adjacent-sequences binp xs)
   (define f (lambda (x acc)
               (let ([cur (car acc)]

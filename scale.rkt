@@ -32,53 +32,49 @@
 
  ;; harmonic minor scales from Aff to Dss
  (matching-identifiers-out #rx".*-minor" (all-defined-out))
+
+
+ ;; min/max pitches for a range
+ pitch-range-pair/c
  
  ;; - - - - - - - - -
  ;; Utilities
- ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
- ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
- ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
  (contract-out
-  [xpose (-> Scale? pitch-range/c pitch/c integer? maybe-pitch/c)])
+  [idx->pitch (-> Scale? natural-number/c pitch/c)]
+  
+  [pitch->idx (-> Scale? pitch/c natural-number/c)]
  
- ;; transpose from the starting pitch using the list of integers to transpose
- ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
- (contract-out
+  ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
+  ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
+  ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
+  [xpose (-> Scale? pitch-range-min-max-pair/c pitch/c signed-integer/c maybe-pitch/c)]
+ 
+  ;; transpose from the starting pitch using the list of integers to transpose
+  ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
   [transpose/successive (-> Scale?
-                            pitch-range/c
+                            pitch-range-min-max-pair/c
                             pitch/c
-                            (or/c integer? (listof integer?))
-                            (or/c maybe-pitch/c (listof maybe-pitch/c)))])
+                            (or/c signed-integer/c (listof signed-integer/c))
+                            (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
- ;; transpose from the starting pitch using a single integer? or a list of integer?
- ;; guarding resulting pitch/c against min and max pitches
- ;; for a single integer?, just provide single pitch/c that is transpose/absolute called once
- ;; else for a list of integer?, answer multiple pitch/c to transpose repeatedly from the
- ;; starting pitch, e.g. (1 2 3 ...) for a step-by-step progression
- (contract-out
+  ;; transpose from the starting pitch using a single signed-integer/c or a list of signed-integer/c
+  ;; guarding resulting pitch/c against min and max pitches
+  ;; for a single signed-integer/c, just provide single pitch/c that is transpose/absolute called once
+  ;; else for a list of signed-integer/c, answer multiple pitch/c to transpose repeatedly from the
+  ;; starting pitch, e.g. (1 2 3 ...) for a step-by-step progression
   [transpose/absolute (-> Scale?
-                          pitch-range/c
+                          pitch-range-min-max-pair/c
                           pitch/c
-                          (or/c integer? (listof integer?))
-                          (or/c maybe-pitch/c maybe-pitch/c))])
- 
- ;; convert a range of integer? (default step of 1) into a list of note of equal duration
- ;; starting at 
- (contract-out
-  [note-range (->* (Scale? duration? pitch-range/c pitch/c integer? integer?)
-                   (integer?)
-                   (listof Note?))])
- 
- ;; concatenate forward and reverse-direction note-range by swapping start, stop, and step for ranges
- (contract-out 
-  [inverted-note-ranges (->*
-                         (Scale? duration? pitch-range/c pitch/c integer? integer?)
-                         (integer?)
-                         (listof Note?))])
+                          (or/c signed-integer/c (listof signed-integer/c))
+                          (or/c maybe-pitch/c maybe-pitch/c))]
 
- ;; minimum and maximum pitches for a scale
- (contract-out
-  [scale->pitch-range (-> Scale? pitch-range/c)]))
+  ;; minimum and maximum pitches for a scale
+  [scale->pitch-range-min-max-pair (-> Scale? pitch-range-min-max-pair/c)]
+
+  ;; all pitches for a scale in ascending order
+  ;; - if optional pitch-range-min-max-pair/c then ascending or descending sub-range within all pitches for scale
+  ;; - if additional natural-number/c then in steps by value (default 1)
+  [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]))
 
 ;; - - - - - - - - -
 ;; implementation
@@ -89,6 +85,8 @@
 (require (only-in algorithms scanl))
 
 (require (only-in srfi/1 list-index))
+
+(require binary-class/contract)
 
 (require (only-in "score.rkt" octave-syms octave? pitch-class? duration? pitch/c maybe-pitch/c Note Note?))
 
@@ -252,6 +250,7 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
+;; internal use: it may give a confusing error if idx is out of max range and (octave-list-ref q) fails
 (define/contract (idx->pitch scale idx)
   (-> Scale? natural-number/c pitch/c)
   (let* ([pcs     (Scale-pitch-classes (scale->c-ordering scale))]
@@ -259,129 +258,159 @@
     (let-values ([(q r) (quotient/remainder idx pcs-cnt)])
       (cons (pitch-class-list-ref pcs r) (octave-list-ref q)))))
 
-;; pitch index is the count of pitches from the lowest possible pitch
-(define/contract (pitch->idx scale pitch)
-  (-> Scale? pitch/c natural-number/c)
+;; index for pitch is the count of pitches from the lowest possible pitch of c-ordered scale
+(define (pitch->idx scale pitch)
   (let* ([pcs     (Scale-pitch-classes (scale->c-ordering scale))]
          [pcs-cnt (length pcs)]
          [pcs-idx (pitch-class-list-idx pcs (car pitch))]
          (oct-idx (octave-list-idx (cdr pitch))))
     (+ (* oct-idx pcs-cnt) pcs-idx)))
 
-(define pitch-range/c
-  (make-flat-contract #:name 'pitch-range/c #:first-order (cons/c pitch/c pitch/c)))
+;; tbd: make into structs to verify construction
+(define pitch-range-pair/c
+  (make-flat-contract #:name 'pitch-range-pair/c #:first-order (cons/c pitch/c pitch/c)))
+
+(define pitch-range-min-max-pair/c
+  (make-flat-contract #:name 'pitch-range-min-max-pair/c #:first-order (cons/c pitch/c pitch/c)))
 
 ;; to compare two pitches from the same scale compare their pitch indices 
 (define/contract (compare-pitches op scale pitch-1 pitch-2)
   (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)
   (op (pitch->idx scale pitch-1) (pitch->idx scale pitch-2)))
 
-;; pitch-range is inclusive
-(define/contract (pitch-in-range? scale pitch-range pitch)
-  (-> Scale? pitch-range/c pitch/c boolean?)
-  (let ([min-pitch (car pitch-range)]
-        [max-pitch (cdr pitch-range)])
+;; pitch-range-pair is inclusive
+(define/contract (pitch-in-range? scale pitch-range-pair pitch)
+  (-> Scale? pitch-range-min-max-pair/c pitch/c boolean?)
+  (let ([min-pitch (car pitch-range-pair)]
+        [max-pitch (cdr pitch-range-pair)])
     (and (compare-pitches >= scale pitch min-pitch)
          (compare-pitches <= scale pitch max-pitch))))
-
-;; called by xpose to answer either pitch or #f given a range
-(define/contract (filter-pitch-in-range scale pitch-range pitch)
-  (-> Scale? pitch-range/c pitch/c maybe-pitch/c)
-  (if (pitch-in-range? scale pitch-range pitch) pitch #f))
 
 (define/contract (pitch-is-scale-member? scale pitch)
   (-> Scale? pitch/c boolean?)
   (if (memq (car pitch) (Scale-pitch-classes scale)) #t #f))
 
-(define/contract (pitch-range-pitches-are-scale-members? scale pitch-range)
-  (-> Scale? pitch-range/c boolean?)
-  (and (pitch-is-scale-member? scale (car pitch-range))
-       (pitch-is-scale-member? scale (cdr pitch-range))))
+(define/contract (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
+  (-> Scale? pitch-range-min-max-pair/c boolean?)
+  (and (pitch-is-scale-member? scale (car pitch-range-pair))
+       (pitch-is-scale-member? scale (cdr pitch-range-pair))))
 
-;; guard xpose, transpose/successive, transpose-absolute inputs
+;; guard xpose, transpose/successive, transpose/absolute inputs
 ;; scale, starting pitch and range to make sure all pitches are
 ;; members of scale
-(define/contract (pitch-range&pitch-in-scale? scale pitch-range pitch)
-  (-> Scale? pitch-range/c pitch/c  boolean?)
-  (and (pitch-range-pitches-are-scale-members? scale pitch-range)
+(define/contract (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch)
+  (-> Scale? pitch-range-min-max-pair/c pitch/c  boolean?)
+  (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
        (pitch-is-scale-member? scale pitch)))
 
-;; (-> Scale? pitch-range/c pitch/c integer? maybe-pitch/c)
-(define (xpose scale pitch-range pitch interval)
-  (when (not (pitch-range&pitch-in-scale? scale pitch-range pitch))
-    (error 'xpose "one of pitch-range ~v or pitch ~v are not members of scale ~v" pitch-range pitch scale))
-  (let* ([pcs       (Scale-pitch-classes (scale->c-ordering scale))]
-         [pcs-cnt   (length pcs)]
-         [pitch-idx (pitch->idx scale pitch)]
-         [xp-pitch-idx (+ pitch-idx interval)])
-    (let-values ([(q r) (quotient/remainder xp-pitch-idx pcs-cnt)])
-      (let ([xp-pitch (cons (pitch-class-list-ref pcs r) (octave-list-ref q))])
-        (filter-pitch-in-range scale pitch-range xp-pitch)))))
+;; Note: slightly expensive due to call to (scale->pitch-range scale),
+;; but guards input ranges
+;; (-> Scale? pitch-range-min-max-pair/c pitch/c signed-integer/c maybe-pitch/c)
+(define (xpose scale pitch-range-pair pitch interval)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
+  (xpose/internal scale pitch (scale->pitch-range scale) interval))
 
-;; (-> Scale? pitch/c pitch-range/c (or/c integer? (listof integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/successive scale pitch-range pitch interval/intervals)
-  (when (not (pitch-range&pitch-in-scale? scale pitch-range pitch))
-    (error 'transpose/successive "one of pitch-range ~v or pitch ~v are not members of scale ~v" pitch-range pitch scale))
-  (if (list? interval/intervals)
-      (transpose/absolute scale pitch-range pitch (scanl + interval/intervals))
-      (xpose scale pitch-range pitch interval/intervals)))
+(define (xpose/internal scale pitch pitch-range interval)
+  (let ([pitch-idx (list-index ((curry equal?) pitch) pitch-range)])
+    (idx->pitch scale (+ pitch-idx interval))))
 
-;; (-> Scale? pitch/c pitch-range/c (or/c integer? (listof integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/absolute scale pitch-range pitch interval/intervals)
-  (when (not (pitch-range&pitch-in-scale? scale pitch-range pitch))
-    (error 'transpose/absolute "one of pitch-range ~v or pitch ~v are not members of scale ~v" pitch-range pitch scale))
-  (if (list? interval/intervals)
-      (map ((((curry xpose) scale) pitch-range) pitch) interval/intervals)
-      (xpose scale pitch-range pitch interval/intervals)))
+;; (-> Scale? pitch/c pitch-range-min-max-pair/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/successive scale pitch-range-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'transpose/successive "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
+  (let ([pitch-range (scale->pitch-range scale)])
+    (if (list? interval/intervals)
+        (map (lambda (interval) (xpose/internal scale pitch pitch-range interval)) (scanl + interval/intervals))
+        (xpose/internal scale pitch pitch-range interval/intervals))))
 
-;; (->* (Scale? duration? pitch-range/c pitch/c integer? integer?) (integer?) (listof Note?))
-(define (note-range scale duration pitch-range pitch start stop [step 1])
-  (when (not (pitch-range&pitch-in-scale? scale pitch-range pitch))
-    (error 'note-range "one of pitch-range ~v or pitch ~v are not members of scale ~v" pitch-range pitch scale))
-  (let ([pitches (transpose/absolute scale pitch-range pitch (range start stop step))])
-    (map (lambda (p) (Note (car p) (cdr p) duration '() #f)) pitches)))
+;; (-> Scale? pitch/c pitch-range-min-max-pair/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/absolute scale pitch-range-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'transpose/absolute "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
+  (let ([pitch-range (scale->pitch-range scale)])
+    (if (list? interval/intervals)
+        (map (lambda (interval) (xpose/internal scale pitch pitch-range interval)) interval/intervals)
+        (xpose/internal scale pitch pitch-range interval/intervals))))
 
-;; (->* (Scale? duration? pitch-range/c pitch/c integer? integer?) (integer?) (listof Note?))
-(define (inverted-note-ranges scale duration pitch-range pitch start stop [step 1])
-  (when (not (pitch-range&pitch-in-scale? scale pitch-range pitch))
-    (error 'inverted-note-range "one of pitch-range ~v or pitch ~v are not members of scale ~v" pitch-range pitch scale))
-  (let ([beginning (note-range scale duration pitch-range pitch start pitch stop step)]
-        [ending    (note-range scale duration pitch-range pitch stop start (- step))])
-    (append beginning ending)))
-
-;; what's the maximum index in the range of all pitches for a given scale
-;; same for all diatonic scales (major, harmonic minor): 55
-;; whole-tone scales max index is 47
-;; chromatic scales max index is 95
-(define (scale->max-idx scale)
+;; the max index for a list of pitches for the scale starting from 0
+;; - diatonic scales (major, harmonic minor): (0 . 55)
+;; - whole-tone scales: (0 . 47)
+;; - chromatic scales: (0 . 95)]
+(define/contract (scale->max-idx scale)
+  (-> Scale? unsigned-integer/c)
   (let ([cnt-pcs  (length (Scale-pitch-classes scale))]
         [cnt-octs (length octave-syms)])
     (sub1 (* cnt-octs cnt-pcs))))
 
 ;; full pitch range for scale is [0..(scale->max-idx scale)] inclusive
-(define (scale->pitch-range scale)
+;; (-> Scale? pitch-range-min-max-pair/c)
+(define (scale->pitch-range-min-max-pair scale)
   (cons (idx->pitch scale 0) (idx->pitch scale (scale->max-idx scale))))
+
+(define/contract (scale->all-pitches scale)
+  (-> Scale? (listof pitch/c))
+  (for*/list ([oct octave-syms]
+              [pit-cls (Scale-pitch-classes (scale->c-ordering scale))])
+    (cons pit-cls oct)))
+
+;; (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))
+(define (scale->pitch-range scale [pitch-range-pair-or-f #f] [step 1])
+  (let ([all-pitches (scale->all-pitches scale)]
+        [pitch-range-pair (if pitch-range-pair-or-f pitch-range-pair-or-f (scale->pitch-range-min-max-pair scale))])
+    (let ([start-idx (list-index ((curry equal?) (car pitch-range-pair)) all-pitches)]
+          [stop-idx  (list-index ((curry equal?) (cdr pitch-range-pair)) all-pitches)])
+      (when (= start-idx stop-idx)
+        (error 'scale-pitch-range "pitch-range-pair ~v have equal indexes" pitch-range-pair))
+      (let ([inner-range-pitches
+             (if (< start-idx stop-idx)
+                 (take (drop all-pitches start-idx)
+                       (add1 (- stop-idx start-idx)))
+                 (take (drop (reverse all-pitches) (sub1 (- (length all-pitches) start-idx)))
+                       (add1 (- start-idx stop-idx))))]
+            [next-step? (let ([c 0])
+                          (lambda (_)
+                            (let ([ret (zero? (modulo c step))])
+                              (set! c (add1 c))
+                              ret)))])
+        (filter next-step? inner-range-pitches)))))
 
 (module+ test
   (require rackunit)
+  (define (scale->pitch-range/old scale)
+    (let ([max-idx (scale->max-idx scale)]
+          [start-pitch (idx->pitch scale 0)])
+      (transpose/absolute scale (scale->pitch-range-min-max-pair scale) start-pitch (range 0 (add1 max-idx)))))
+  (check-equal? (scale->pitch-range C-major) (scale->pitch-range/old C-major))
+  (check-equal? (scale->pitch-range Cff-major) (scale->pitch-range/old Cff-major))
+  (check-equal? (scale->pitch-range Fss-major) (scale->pitch-range/old Fss-major))
+  (check-equal? (scale->pitch-range C-major) (scale->pitch-range/old C-major))
+  (define/contract (filter-pitch-in-range scale pitch-range-pair pitch)
+    (-> Scale? pitch-range-min-max-pair/c pitch/c maybe-pitch/c)
+    (if (pitch-in-range? scale pitch-range-pair pitch) pitch #f))
+  (define (xpose/old scale pitch-range-pair pitch interval)
+    (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+      (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
+    (let* ([pcs       (Scale-pitch-classes (scale->c-ordering scale))]
+           [pcs-cnt   (length pcs)]
+           [pitch-idx (pitch->idx scale pitch)]
+           [xp-pitch-idx (+ pitch-idx interval)])
+      (let-values ([(q r) (quotient/remainder xp-pitch-idx pcs-cnt)])
+        (let ([xp-pitch (cons (pitch-class-list-ref pcs r) (octave-list-ref q))])
+          (filter-pitch-in-range scale pitch-range-pair xp-pitch)))))
+  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 1)
+                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 1))
+  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -1)
+                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -1))
+  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 15)
+                  (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 15))
+  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -15)
+                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -15))
   (check-equal?
-   (transpose/successive C-major (scale->pitch-range C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
+   (transpose/successive C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))
   (check-exn exn:fail? (lambda () (xpose C-major (cons 'C '0va) 1000)))
   (for-each (lambda (sc)
               (for-each (lambda (n) (check-equal? n (pitch->idx sc (idx->pitch sc n))))
                         (range (scale->max-idx sc))))
             (list C-major chromatic-sharps chromatic-flats A-minor A-major)))
-
-#|
-tbd:
-(define ascending-thirds (repeat-list 10 (note-range C-major 'S. (cons 'C '0va) -9 15 2)))
-(define ascending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-thirds))
-(define ascending-descending-thirds (repeat-list 10 (inverted-note-ranges D-major 'S (cons 'D '8vb) -7 18 2)))
-(define ascending-descending-thirds-voice (SplitStaffVoice 'AcousticGrand ascending-descending-thirds))
-(define voices-group (VoicesGroup
-                      (TempoDur 'Q 120)
-                      (TimeSignatureSimple 3 'Q)
-                      (list ascending-thirds-voice ascending-descending-thirds-voice)))
-(define simple-score (Score "simple" "" (list voices-group)))
-|#

@@ -1,8 +1,6 @@
 #lang racket
 
-;; score: Score and contained structs, contracts for pitch and sums,
-;; predicates and syms from score-syms.rkt
-;; capture all data and data predicates contained in Score and
+;; score: capture all data and data predicates contained in Score,
 ;; forward all from score-sym.rkt
 
 (provide
@@ -53,7 +51,7 @@
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
 
 (define num-denom/c
-  (make-flat-contract #:name 'num-denom/c #:first-order (cons/c exact-positive-integer? duration?)))
+  (make-flat-contract #:name 'num-denom/c #:first-order (cons/c natural-number/c duration?)))
 
 (struct/contract Note ([pitch    pitch-class?]
                        [octave   octave?]
@@ -75,23 +73,23 @@
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
-(struct/contract Tuplet ([num   exact-positive-integer?]
-                         [denom exact-positive-integer?]
+(struct/contract Tuplet ([num   natural-number/c]
+                         [denom natural-number/c]
                          [dur   duration?]
                          [notes (listof tuplet-note/c)])
                  #:transparent)
 
 (struct/contract TempoDur ([dur   duration?]
-                           [perMin exact-positive-integer?])
+                           [perMin natural-number/c])
                  #:transparent)
 
 (struct/contract TempoLong ([text   string?]
                             [dur    duration?]
-                            [perMin exact-positive-integer?])
+                            [perMin natural-number/c])
                  #:transparent)
 
 (define/contract (tempo-range-ctor-guard dur perMinLo perMinHi type-name)
-  (-> duration? exact-positive-integer? exact-positive-integer? symbol? (values duration? exact-positive-integer? exact-positive-integer?))
+  (-> duration? natural-number/c natural-number/c symbol? (values duration? natural-number/c natural-number/c))
   (if (>= perMinLo perMinHi)
       (error type-name "for vals ~e ~e ~e, perMinLo ~e is not less than perMinHi ~e" dur perMinLo perMinHi perMinLo perMinHi)
       (values dur perMinLo perMinHi)))
@@ -105,19 +103,19 @@
                                [mode  mode?])
                  #:transparent)
 
-(struct/contract TimeSignatureSimple ([num   exact-positive-integer?]
+(struct/contract TimeSignatureSimple ([num   natural-number/c]
                                       [denom duration?])
                  #:transparent)
 
 (define/contract (time-signature-grouping-ctor-guard groups num denom type-name)
-  (-> (listof exact-positive-integer?) exact-positive-integer? duration? symbol? (values (listof exact-positive-integer?) exact-positive-integer? duration?))
+  (-> (listof natural-number/c) natural-number/c duration? symbol? (values (listof natural-number/c) natural-number/c duration?))
   (if (not (eq? num (apply + groups)))
       (error type-name "sum of values in groups ~v does not equal to numerator in time signature ~v" groups num)
       (values groups num denom)))
                   
 (struct TimeSignatureGrouping (groups num denom) #:guard time-signature-grouping-ctor-guard  #:transparent)
 
-(struct/contract TimeSignatureCompound ([groups (listof (*list/c exact-positive-integer? duration?))])
+(struct/contract TimeSignatureCompound ([groups (listof (*list/c natural-number/c duration?))])
                  #:transparent)
 
 (define time-signature/c

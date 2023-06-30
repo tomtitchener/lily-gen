@@ -19,6 +19,7 @@
  instr->short-lily  ;; shortened instrument name for left margin
  clef->lily
  mode->lily
+ 
  ;; contracts 
  (contract-out
   [duration->int  (-> symbol? natural-number/c)]

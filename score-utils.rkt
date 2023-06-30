@@ -4,13 +4,21 @@
 
 (provide
  (contract-out
-  [voice-event->duration-int (-> voice-event/c natural-number/c)])
- (contract-out
-  [time-signature->barlen (-> time-signature/c exact-positive-integer?)])
- (contract-out
-  [num-denom-pr->barlen (-> num-denom/c exact-positive-integer?)])
- (contract-out
-  [voice->total-durs (-> voice/c (listof exact-positive-integer?))]))
+  ;; extract duration from voice-event, 0 if none
+  [voice-event->duration-int (-> voice-event/c natural-number/c)]
+
+  ;; map voice-event->duration-int across all (listof voice-event/c)
+  ;; per voice, answer max of (listof voice-event/c e.g. for Keyboard
+  [voice->total-durs (-> voice/c (listof natural-number/c))]
+  
+  ;; multiply num with (duration->int denom) for simple
+  ;; time signature
+  ;; for grouping and compound, sum of same for all embedded
+  ;; simple times signatures
+  [time-signature->barlen (-> time-signature/c natural-number/c)]
+  
+  ;; multiply num  and duration->int for first and last elements of pair
+  [num-denom-pr->barlen (-> num-denom/c natural-number/c)]))
 
 ;; - - - - - - - - -
 ;; implementation
@@ -18,6 +26,7 @@
 
 (require (only-in "lily-utils.rkt" duration->int))
 
+;; (-> voice-event/c natural-number/c)
 (define (voice-event->duration-int voice-event)
   (match voice-event
     [(Note _ _ dur _ _) (duration->int dur)]
@@ -29,6 +38,7 @@
     [(? clef?)          0]))
 
 ;; answser list of total durs because KeyboardVoice has treble and bass voices
+;; (-> voice/c (listof natural-number/c))
 (define (voice->total-durs voice)
   (match voice
     [(PitchedVoice _ voice-events)
@@ -39,6 +49,7 @@
     [(SplitStaffVoice _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]))
 
+;; (-> time-signature/c natural-number/c)
 (define (time-signature->barlen time-sig)
   (match time-sig
     [(TimeSignatureSimple num denom)
@@ -52,5 +63,6 @@
                        (apply + (map ((curry *) denom) nums))))
                    groups))]))
 
+;; (-> num-denom/c natural-number/c)
 (define (num-denom-pr->barlen num-denom-pr)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))

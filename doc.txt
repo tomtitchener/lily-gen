@@ -8,11 +8,12 @@ File hierarchy (6/13/2023):  8 files, 4 levels
   |  | ' / |   |        |        |
   |  | | | |   `-----.  |  .-----'
   |  V V V |         |  |  |
-  |  utils |         V  V  V
-  |        |        .-------.
-  |        ` ------>| score |
-  `---------------->`-------'
-                        |
+  |  utils |         |  |  |
+  |        |         V  V  V
+  |        ` ------>.-------.
+  `---------------->| score |
+                    `-------'
+		        |
                         V
                    score-syms
 
@@ -24,4 +25,25 @@ generator but I'm not sure they're worth the effort of recording a vector in the
 
 Remember also progression by increasing intensity, e.g. for period use series like fibonacci, 
 e.g. 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, so the rate of change accelerates.  
+
+Planning:
+ - motif generators to build run patterns with starting and ending pitches, starting duration
+   for durations, add dot to starting duration, get duration of remaining duration to fill in
+   to the next beat (e.g. dotted quarter then eighth) then doubling on the beat e.g. four 16ths
+   then 8 32nds, 16 64ths, and 32 128ths for a run that comprises 2 + 4 + 8 + 16 + 32 is 62 notes
+   which is a lot in a diatonic scale, actually more than the full range of 56 notes so it's
+   probably better to clip at target pitch or the end of the durations
+   or another way to think of it would be to take the range as a starting point and squeeze the
+   rip into it compressing the numnber of faster pitches given the target doubling ratios, note
+   this is similar to the fibonacci acceleration pattern, though in the original idea I'd preserve
+   e.g. the division into quarter note components for a total of six quarter notes, which seems
+   pretty short
+   the goal is to preserve the components of the rhytmic acceleration, quarter, eighth, sixteenth,
+   thirty-second, sixty-fourth, and 128th durations
+   or maybe this is all premature optimization and what I really want is to try something out and
+   hear what it sounds like first, though it'd be nice to have it always end on a downbeat even
+   though that'd mean bringing in the time signature and duration from the start of the bar
+   
+   
+   
 

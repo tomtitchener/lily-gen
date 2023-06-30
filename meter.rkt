@@ -8,12 +8,15 @@
   ;; rewrite voice-events with durations that reflect beat and bar divisions
   ;; e.g. divide a 'Q. note that falls between beats in 4/4 into tied 'E and 'Q notes
   [align-voice-events-durations (-> time-signature/c (listof voice-event/c) (listof voice-event/c))]
+  
   ;; map align-voice-events-durations over one or more lists of voice-event/c in a voice/c
   [align-voice-durations (-> time-signature/c voice/c voice/c)]
+  
   ;; find the voice-event/c in the listof voice-event/c with the longest cumulative duration,
   ;; determine the duration to finish the current measure,
   ;; add rests to all listof voice-event/c to match the longest listof voice-event/c
   [extend-voices-durations (-> time-signature/c (listof voice/c) (listof voice/c))]
+  
   ;; combine extend-voices-durations with align-voices-durations 
   ;; for the listof voice/c in the VoicesGroup
   [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
@@ -130,6 +133,7 @@
      (SplitStaffVoice instr (append voice-events (durlen->rests (car added-durlens))))]))
 
 ;; add rests to the end of voice-events to carry all voices to the end of the last measure
+;; (-> time-signature/c (listof voice/c) (listof voice/c))
 (define (extend-voices-durations time-sig voices)
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
          [voices-total-durlens (flatten (map voice->total-durs voices))]
@@ -225,6 +229,7 @@
 ;; * for list of one or more other voice events, split individual note
 ;;   or chords into a list of tied note or chords, suppressing the controls
 ;;   for the inner (tied) note or notes
+;; (-> time-signature/c (listof voice-event/c) (listof voice-event/c))
 (define (align-voice-events-durations time-signature voice-events)
   ;; inner fold over (should be) single-item lists of voice-event
   (define (adjvedurs voice-event pr)
@@ -288,6 +293,7 @@
       (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups)))
       )))
 
+;; (-> time-signature/c voice/c voice/c)
 (define (align-voice-durations time-signature voice)
   (match voice
     [(PitchedVoice instr voice-events)
@@ -298,6 +304,7 @@
     [(SplitStaffVoice instr voice-events)
      (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
 
+;; (-> VoicesGroup? VoicesGroup?)
 (define (extend&align-voices-group-durations voices-group)  
   (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
          ;; first extend all voices to end at the last bar line
