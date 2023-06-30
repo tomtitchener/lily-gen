@@ -1,3 +1,3 @@
 #lang info
 
-(define build-deps '("seq" "algorithms" "binary-class" "rack-check" "rackunit-lib"))
+(define build-deps '("seq" "algorithms" "binary-class" "rackcheck" "rackunit-lib"))
