@@ -16,6 +16,6 @@ jobs:
           distribution: 'full'
           version: '8.7'
       - name: Install Package and its Dependencies
-        run: raco pkg install --auto --skip-installed seq algorithms binary-class rack-unit
+        run: raco pkg install --auto --skip-installed seq algorithms binary-class
       - name: Run Tests
         run: raco test .
