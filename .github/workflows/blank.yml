@@ -9,6 +9,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@master
+      - name: Cache Racket dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/racket
+            ~/.local/share/racket
+          key: ${{ runner.os }}-racket-8.7
       - name: Install Racket
         uses: Bogdanp/setup-racket@v1.6.1
         with:
@@ -16,6 +23,6 @@ jobs:
           distribution: 'full'
           version: '8.7'
       - name: Install Package and its Dependencies
-        run: raco pkg install --auto --batch
+        run: raco pkg install --auto --skip-installed seq algorithms binary-class rack-unit
       - name: Run Tests
         run: raco test .
