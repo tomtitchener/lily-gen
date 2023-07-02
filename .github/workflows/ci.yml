@@ -17,7 +17,7 @@ jobs:
           version: '8.7'
       - name: Install Package and its Dependencies
 	run: |
-	sudo apt install lilypond
-        raco pkg install --auto --skip-installed seq algorithms binary-class
+	  sudo apt install lilypond
+          raco pkg install --auto --skip-installed seq algorithms binary-class
       - name: Run Tests
         run: raco test .
