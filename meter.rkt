@@ -136,6 +136,22 @@
 ;; (-> time-signature/c (listof voice/c) (listof voice/c))
 (define (extend-voices-durations time-sig voices)
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
+         [voices-total-durlens (map voice->total-durs voices)] ;; flatten is cause of loss of structure
+         ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
+         [max-total-durlen      (apply max (flatten voices-total-durlens))]
+         ;; len of bar
+         [bar-durlen            (time-signature->barlen time-sig)]
+         ;; given max total-durlen, how much spills over into the last bar for the max-total-durlen?
+         [last-bar-spill-over   (modulo max-total-durlen bar-durlen)]
+         ;; given last-bar-spill-over, how much remains to get to the end of that bar?
+         [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
+         ;; target total durlen is sum of max-total-durlen and last-bar-remainder
+         [target-total-durlen   (+ max-total-durlen last-bar-remainder)]
+         [voices-rem-durlenss (map (lambda (durlens) (map ((curry -) target-total-durlen) durlens)) voices-total-durlens)])
+    (map (lambda (voice rem-durlens) (add-rests-for-durlens voice rem-durlens)) voices voices-rem-durlenss)))
+
+#;(define (extend-voices-durations time-sig voices)
+  (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
          [voices-total-durlens (flatten (map voice->total-durs voices))]
          ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
          [max-total-durlen      (apply max voices-total-durlens)]
@@ -306,6 +322,14 @@
 
 ;; (-> VoicesGroup? VoicesGroup?)
 (define (extend&align-voices-group-durations voices-group)  
+  (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
+         ;; first extend all voices to end at the last bar line
+         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
+         ;; then align voice-event durations to reflect the meter
+         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
+    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
+
+#;(define (extend&align-voices-group-durations-orig voices-group)  
   (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
          ;; first extend all voices to end at the last bar line
          [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]

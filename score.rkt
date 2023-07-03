@@ -138,7 +138,16 @@
 (struct/contract SplitStaffVoice ([instr       instr?]
                                   [voiceevents (listof voice-event/c)])
                  #:transparent)
-                 
+
+;; TBD: add PercussionVoice.  Note one instrument e.g. timbales might have two "notes" e.g. timh and timl
+;; or for melodic tom-tom: tomfl tomfh toml tomh tomml tommh, and etc.
+;; see https://lilypond.org/doc/v2.24/Documentation/notation/percussion-notes
+;; and e.g. all tom-toms can all be rendered on a percussion-style or maybe just toml and tomh on a timbales-style staff
+;; - need percussion pitch class analogous to a tuned voice pitch class though they're unique to the instrument
+;; - otherwise notation for a percussion note follows lilypond convention e.g. toml4 tomh8->
+;; see https://lilypond.org/doc/v2.24/Documentation/snippets/percussion
+
+
 (define voice/c
   (make-flat-contract #:name 'voice/c #:first-order (or/c PitchedVoice? KeyboardVoice? SplitStaffVoice?)))
 

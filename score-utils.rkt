@@ -44,8 +44,8 @@
     [(PitchedVoice _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]
     [(KeyboardVoice _ voice-events-pr)
-     (list (apply + (map voice-event->duration-int car voice-events-pr))
-           (apply + (map voice-event->duration-int cdr voice-events-pr)))]
+     (list (apply + (map voice-event->duration-int (car voice-events-pr)))
+           (apply + (map voice-event->duration-int (cdr voice-events-pr))))]
     [(SplitStaffVoice _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]))
 

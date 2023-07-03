@@ -239,7 +239,7 @@
         [voice-groups (Score-voice-groups score)])
     @string-append{
     \include "articulate.ly"
-    \version "2.24.1"
+    \version "@(getenv "LILYPOND_VERSION")"
     \header { title = "@title" copyright = "@seed" }
     structure = {
     <<
@@ -251,11 +251,32 @@
     }
     ))
 
-#|
-(define treble-notes `(Treble ,(Note 'C '0va 'Q '() #f) ,(Note 'D '0va 'Q '() #f) ,(Note 'E '0va 'S '() #f)))
-(define bass-notes `(Bass ,(Note 'E '8vb 'Q '() #f) ,(Note 'D '8vb 'Q '() #f) ,(Note 'E '8vb 'S '() #f)))
-(define voice (KeyboardVoice 'AcousticGrand (cons treble-notes bass-notes)))
-(define voice-group (VoicesGroup (TempoDur 'Q 120) (TimeSignatureSimple 3 'Q) (list voice)))
-(define score (Score "test" "seed" (list voice-group)))
-(display (score->lily score))
-|#
+(module+ test
+  (require rackunit)
+  (require "scale.rkt")
+  (require "meter.rkt")
+  (let* ([pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'S '() #f))]
+         [ascending-treble-pitch-range (cons (cons 'Ef '0va) (cons 'G '15va))]
+         [ascending-treble-pitches (scale->pitch-range Ef-major ascending-treble-pitch-range)]
+         [ascending-treble-voice-events (map pitch->note-voice-event ascending-treble-pitches)]
+         [ascending-bass-pitch-range (cons (cons 'G '15vb) (cons 'Bf '0va))]
+         [ascending-bass-pitches (scale->pitch-range Ef-major ascending-bass-pitch-range)]
+         [ascending-bass-voice-events (map pitch->note-voice-event ascending-bass-pitches)]
+         ;; issue:  bass voice events end in treble clef so also start in treble clef, unreadable
+         ;; fix: create initial and intermediate clef (bass/treble) filter for high and low voices
+         ;; where I there's a window of pending voice-events so I don't make my mind up about the
+         ;; clef that starts that passage until I see e.g. 5 in a row in the same clef, then I
+         ;; remember the the current clef (which starts as #f) and repeat after I accumulate the 
+         ;; next clef, only emitting a new clef when there's a change in the last five notes
+         [ascending-keyboard-voice (KeyboardVoice 'AcousticGrand (cons ascending-treble-voice-events ascending-bass-voice-events))]
+         [simple-tempo (TempoDur 'Q 120)]
+         [simple-time-signature (TimeSignatureSimple 4 'Q)]
+         [ascending-keyboard-voices-group (VoicesGroup simple-tempo simple-time-signature (list ascending-keyboard-voice))]
+         [extended&aligned-voices-group (extend&align-voices-group-durations ascending-keyboard-voices-group)]
+         [score (Score "simple ascending keyboard voices" "seed" (list extended&aligned-voices-group))])
+    (let* ([output-file-name "simple-ascending-keyboard-voice.ly"]
+           [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
+      (display (score->lily score) output-port)
+      (close-output-port output-port)
+      (check-true (system (format "lilypond -s ~v" output-file-name))))))
+
