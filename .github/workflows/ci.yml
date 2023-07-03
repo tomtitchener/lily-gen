@@ -21,5 +21,5 @@ jobs:
           raco pkg install --auto --skip-installed seq algorithms binary-class
       - name: Run Tests
         run: |
-          export LILYPOND_VERSION=2.21
+          export LILYPOND_VERSION=2.22
           raco test .
