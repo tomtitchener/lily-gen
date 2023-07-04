@@ -115,7 +115,7 @@
   (-> KeySignature? string?)
   (let ([pitch (KeySignature-pitch keysig)]
         [mode  (KeySignature-mode  keysig)])
-    (format "\\key ~a ~a" (pitch-class->lily pitch) (mode->lily mode))))
+    (format "\\key ~a \\~a" (pitch-class->lily pitch) (mode->lily mode))))
 
 (define/contract (time-signature-simple->lily time-signature)
   (-> TimeSignatureSimple? string?)
@@ -255,20 +255,21 @@
   (require rackunit)
   (require "scale.rkt")
   (require "meter.rkt")
-  (let* ([pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'S '() #f))]
+  (let* ([ef-key-signature (KeySignature 'Ef 'Major)]
+         [pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'S '() #f))]
          [ascending-treble-pitch-range (cons (cons 'Ef '0va) (cons 'G '15va))]
          [ascending-treble-pitches (scale->pitch-range Ef-major ascending-treble-pitch-range)]
          [ascending-treble-voice-events (map pitch->note-voice-event ascending-treble-pitches)]
+         [ascending-treble-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events ascending-treble-voice-events 'Treble)]
+         [ascending-treble-voice-events-with-key-signature-and-clef (cons ef-key-signature ascending-treble-voice-events-with-clef)]
          [ascending-bass-pitch-range (cons (cons 'G '15vb) (cons 'Bf '0va))]
          [ascending-bass-pitches (scale->pitch-range Ef-major ascending-bass-pitch-range)]
          [ascending-bass-voice-events (map pitch->note-voice-event ascending-bass-pitches)]
-         ;; issue:  bass voice events end in treble clef so also start in treble clef, unreadable
-         ;; fix: create initial and intermediate clef (bass/treble) filter for high and low voices
-         ;; where I there's a window of pending voice-events so I don't make my mind up about the
-         ;; clef that starts that passage until I see e.g. 5 in a row in the same clef, then I
-         ;; remember the the current clef (which starts as #f) and repeat after I accumulate the 
-         ;; next clef, only emitting a new clef when there's a change in the last five notes
-         [ascending-keyboard-voice (KeyboardVoice 'AcousticGrand (cons ascending-treble-voice-events ascending-bass-voice-events))]
+         [ascending-bass-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events ascending-bass-voice-events 'Bass)]
+         [ascending-bass-voice-events-with-key-signature-and-clef (cons ef-key-signature ascending-bass-voice-events-with-clef)]
+         [ascending-keyboard-voice (KeyboardVoice 'AcousticGrand
+                                                  (cons ascending-treble-voice-events-with-key-signature-and-clef
+                                                        ascending-bass-voice-events-with-key-signature-and-clef))]
          [simple-tempo (TempoDur 'Q 120)]
          [simple-time-signature (TimeSignatureSimple 4 'Q)]
          [ascending-keyboard-voices-group (VoicesGroup simple-tempo simple-time-signature (list ascending-keyboard-voice))]

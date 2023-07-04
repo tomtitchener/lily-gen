@@ -23,7 +23,10 @@
  ;; contracts 
  (contract-out
   [duration->int  (-> symbol? natural-number/c)]
-  [int->durations (-> natural-number/c (listof duration?))]))
+  [int->durations (-> natural-number/c (listof duration?))]
+  [add-bass-or-treble-clefs-to-voice-events (-> (listof voice-event/c) clef? (listof voice-event/c))])
+ )
+
 
 ;; - - - - - - - - -
 ;; implementation
@@ -31,6 +34,8 @@
 
 ;; indirectly imports all from score-syms.rkt
 (require "score.rkt")
+
+(require "scale.rkt")
 
 (define pitch-lily-strings
   '("bis"   "c"   "deses"
@@ -94,6 +99,7 @@
 
 (define duration-int-hash (make-hash (map cons duration-syms duration-vals)))
 
+;; (-> symbol? natural-number/c)
 (define (duration->int duration)
   (hash-ref duration-int-hash duration))
 
@@ -101,8 +107,8 @@
 
 ;; totval is any non-zero positive integer,
 ;; answer the list of durations large -> small to exhaust totval
-(define/contract (int->durations totval)
-  (-> natural-number/c (listof duration?))
+;; (-> natural-number/c (listof duration?))
+(define (int->durations totval)
   (define (int->duration duration)
     (hash-ref int-duration-hash duration))
   (let inner ([tot totval]
@@ -272,4 +278,66 @@
 
 (define (mode->lily mode)
   (hash-ref sym-mode-hash mode))
+
+(define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)
+  (define max-count-window-pitches 5)
+  (define (max-note-for-clef clef) (if (symbol=? 'Bass clef) (cons 'F '0va) (cons 'G '8vb)))
+  (define (compare-pitches cmp pitch1 pitch2) (cmp (pitch->chromatic-idx pitch1) (pitch->chromatic-idx pitch2)))
+  (define (pitch-within-clef? clef pitch)
+    (let ([max-or-min-note (max-note-for-clef clef)]
+          [cmp-op (if (symbol=? 'Bass clef) <= >=)])
+      (compare-pitches cmp-op pitch max-or-min-note)))
+  (define (voice-events->count-pitches voice-events)
+    (define (voice-event->count-pitches voice-event)
+      (if (or (Note? voice-event) (Chord? voice-event))
+          1
+          (if (Tuplet? voice-event)
+              (length (Tuplet-notes voice-event))
+              0)))
+    (apply + (map voice-event->count-pitches voice-events)))
+  (define (fold-fun voice-event fold-state)
+    (let ([current-clef   (first  fold-state)]
+          [current-window (second fold-state)]
+          [current-return (third  fold-state)])
+      (define (fold-fun-inner pitch-class octave)
+        (if (pitch-within-clef? current-clef (cons pitch-class octave))
+            (let ([new-window '()]
+                  [new-return (append current-return current-window (list voice-event))])
+              (list current-clef new-window new-return))
+            (let ([new-window (append current-window (list voice-event))])
+              (if (< (voice-events->count-pitches new-window) max-count-window-pitches)
+                  (list current-clef new-window current-return)
+                  (let ([new-clef   (if (symbol=? current-clef 'Bass) 'Treble 'Bass)]
+                        [new-window '()]
+                        [new-return (append current-return current-window)])
+                    (list new-clef new-window new-return))))))
+      (match voice-event
+        [(Note pitch-class octave _ _ _)
+         (fold-fun-inner pitch-class octave)]
+        [(Chord pitches _ _ _)
+         (let ([pitch (if (symbol=? current-clef 'Bass) (last pitches) (first pitches))])
+           (fold-fun-inner (car pitch) (cdr pitch)))]
+        ;; not sure what to do here, find lowest or highest pitch the way I do with chord?
+        [(Tuplet _ _ _ notes)
+         (define (tuplet-note->pitches note)
+           (match note
+             [(Note pitch-class octave _ _ _)
+              (list (cons pitch-class octave))]
+             [(Chord pitches _ _ _)
+              pitches]
+             [_
+              '()]))
+         (let* ([pitches (append (tuplet-note->pitches notes))]
+                [sorted-pitches (sort pitches < #:key pitch->chromatic-idx)]
+                [pitch (if (symbol=? current-clef 'Bass) (last sorted-pitches) (first sorted-pitches))])
+           (fold-fun-inner (car pitch) (cdr pitch)))]
+        [_
+         (let ([new-window (append current-window (list voice-event))])
+           (list current-clef new-window current-return))])))
+  (let* ([initial-state (list starting-clef (list starting-clef) '())]
+         [final-state (foldl fold-fun initial-state voice-events)]
+         [final-window (second final-state)]
+         [final-return (third final-state)])
+    (append final-return final-window)))
+
 

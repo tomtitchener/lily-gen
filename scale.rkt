@@ -33,7 +33,6 @@
  ;; harmonic minor scales from Aff to Dss
  (matching-identifiers-out #rx".*-minor" (all-defined-out))
 
-
  ;; min/max pitches for a range
  pitch-range-pair/c
  
@@ -43,6 +42,8 @@
   [idx->pitch (-> Scale? natural-number/c pitch/c)]
   
   [pitch->idx (-> Scale? pitch/c natural-number/c)]
+
+  [pitch->chromatic-idx (-> pitch/c natural-number/c)]
  
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
@@ -158,7 +159,7 @@
 (define (fifths-ordered-pitch-class-ref sym)
   (list-ref fifths-ordered-pitch-class-syms sym))
 
-(define/contract (compare-pitch-class-sym-indices cmp sym1 sym2)
+(define/contract (pitch-fifths-ordered-pitch-class-sym-indices cmp sym1 sym2)
   (-> (-> natural-number/c natural-number/c boolean?) pitch-class? pitch-class? boolean?)
   (cmp (fifths-ordered-pitch-class-index sym1) (fifths-ordered-pitch-class-index sym2)))
 
@@ -169,9 +170,9 @@
 ;; the length of the list gives the pitches in order (C D E F G A B)
 (define/contract (major-scale root-pc [err-sym 'major-scale])
   (->* (pitch-class?) (symbol?) Scale?)
-  (when (compare-pitch-class-sym-indices < root-pc 'Cff)
+  (when (pitch-fifths-ordered-pitch-class-sym-indices < root-pc 'Cff)
     (error err-sym "root pitch ~v is below minimum ~a" root-pc 'Cff))
-  (when (compare-pitch-class-sym-indices > root-pc 'Fss)
+  (when (pitch-fifths-ordered-pitch-class-sym-indices > root-pc 'Fss)
     (error err-sym "root pitch ~v is above maximum ~a" root-pc 'Fss))
   (let* ([first (pitch-class-list-idx fifths-ordered-pitch-class-syms root-pc)]
          [cnt-fifths (length fifths-ordered-pitch-class-syms)]
@@ -187,9 +188,9 @@
 ;; (A -> D -> G -> C)
 (define/contract (minor-scale root-pc)
   (-> pitch-class? Scale?)
-  (when (compare-pitch-class-sym-indices < root-pc 'Aff)
+  (when (pitch-fifths-ordered-pitch-class-sym-indices < root-pc 'Aff)
     (error 'minor-scale "root pitch ~v is below minimum ~v" root-pc 'Aff))
-  (when (compare-pitch-class-sym-indices > root-pc 'Dss)
+  (when (pitch-fifths-ordered-pitch-class-sym-indices > root-pc 'Dss)
     (error 'minor-scale "root pitch ~v is above maximum ~v" root-pc 'Dss))
   (let* ([temp-idx (- (fifths-ordered-pitch-class-index root-pc) 3)]
          [temp-pc (fifths-ordered-pitch-class-ref temp-idx)])
@@ -250,21 +251,30 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
-;; internal use: it may give a confusing error if idx is out of max range and (octave-list-ref q) fails
-(define/contract (idx->pitch scale idx)
-  (-> Scale? natural-number/c pitch/c)
-  (let* ([pcs     (Scale-pitch-classes (scale->c-ordering scale))]
-         [pcs-cnt (length pcs)])
-    (let-values ([(q r) (quotient/remainder idx pcs-cnt)])
-      (cons (pitch-class-list-ref pcs r) (octave-list-ref q)))))
+;; (-> Scale? natural-number/c pitch/c)
+(define (idx->pitch scale idx)
+  (when (> idx (scale->max-idx scale))
+    (error 'idx->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
+  (let* ([pitch-classes       (Scale-pitch-classes (scale->c-ordering scale))]
+         [pitch-classes-count (length pitch-classes)])
+    (let-values ([(q r) (quotient/remainder idx pitch-classes-count)])
+      (cons (pitch-class-list-ref pitch-classes r) (octave-list-ref q)))))
 
 ;; index for pitch is the count of pitches from the lowest possible pitch of c-ordered scale
+;; (-> Scale? pitch/c natural-number/c)
 (define (pitch->idx scale pitch)
-  (let* ([pcs     (Scale-pitch-classes (scale->c-ordering scale))]
-         [pcs-cnt (length pcs)]
-         [pcs-idx (pitch-class-list-idx pcs (car pitch))]
-         (oct-idx (octave-list-idx (cdr pitch))))
-    (+ (* oct-idx pcs-cnt) pcs-idx)))
+  (let* ([octave-idx          (octave-list-idx (cdr pitch))]
+         [pitch-classes       (Scale-pitch-classes (scale->c-ordering scale))]
+         [pitch-classes-idx   (pitch-class-list-idx pitch-classes (car pitch))]
+         [pitch-classes-count (length pitch-classes)])
+    (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
+
+;; (-> pitch/c natural-number/c)
+(define (pitch->chromatic-idx pitch)
+  (let ([octave-idx (octave-list-idx (cdr pitch))]
+        [pitch-classes-idx (pitch-class->chromatic-enharmonic-index (car pitch))]
+        [pitch-classes-count (length c-ordered-enharmonic-pitch-class-symss)])
+    (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
 
 ;; tbd: make into structs to verify construction
 (define pitch-range-pair/c
@@ -333,8 +343,9 @@
         (map (lambda (interval) (xpose/internal scale pitch pitch-range interval)) interval/intervals)
         (xpose/internal scale pitch pitch-range interval/intervals))))
 
-;; the max index for a list of pitches for the scale starting from 0
-;; - diatonic scales (major, harmonic minor): (0 . 55)
+;; the max index for a list of pitches for the scale
+;; starting from 0 to the final index, inclusive
+;; - diatonic scales (major, harmonic minor): (0 . 55) 
 ;; - whole-tone scales: (0 . 47)
 ;; - chromatic scales: (0 . 95)]
 (define/contract (scale->max-idx scale)

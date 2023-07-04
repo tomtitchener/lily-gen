@@ -64,6 +64,7 @@
 
 (struct/contract Spacer ([dur duration?]) #:transparent)
 
+;; tbd: guarded ctor that orders pitches low-to-high, eliminates duplicates
 (struct/contract Chord ([pitches  (listof pitch/c)]
                         [dur      duration?]
                         [controls (listof control/c)]
