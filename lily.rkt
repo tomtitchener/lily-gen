@@ -268,6 +268,19 @@
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
            [all-voice-events-with-key-signature-and-clef (cons af-key-signature all-voice-events-with-clef)])
       (PitchedVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
+
+  (define split-staff-voice
+    (let* ([af-key-signature (KeySignature 'Bf 'Major)]
+           [pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'E '() #f))]
+           [ascending-pitch-range (cons (cons 'Bf '15vb) (cons 'F '15va))]
+           [ascending-pitches (scale->pitch-range Af-major ascending-pitch-range 3)]
+           [descending-pitch-range (cons (cons 'Af '15va) (cons 'G '15vb))]
+           [descending-pitches (scale->pitch-range Af-major descending-pitch-range 3)]
+           [all-pitches (append ascending-pitches descending-pitches ascending-pitches descending-pitches)]
+           [all-voice-events (map pitch->note-voice-event all-pitches)]
+           [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
+           [all-voice-events-with-key-signature-and-clef (cons af-key-signature all-voice-events-with-clef)])
+      (SplitStaffVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
   
   (define keyboard-voice
     (let* ([ef-key-signature (KeySignature 'Ef 'Major)]
@@ -301,17 +314,21 @@
       (close-output-port output-port)
       (check-true (system (format "lilypond -s -o test ~v" output-file-name)))))  
 
+  (let* ([voices-group (make-simple-voices-group (list pitched-voice))]
+         [score (make-score "simple pitched voice" (list voices-group))])
+    (test-score "simple-pitched-voice" score))
+
+  (let* ([voices-group (make-simple-voices-group (list split-staff-voice))]
+         [score (make-score "split staff voice" (list voices-group))])
+    (test-score "split-staff-voice" score))
+
   (let* ([voices-group (make-simple-voices-group (list keyboard-voice))]
          [score (make-score "simple ascending keyboard voice" (list voices-group))])
     (test-score "simple-ascending-keyboard-voice" score))
   
-  (let* ([voices-group (make-simple-voices-group (list pitched-voice))]
-         [score (make-score "simple pitched voice" (list voices-group))])
-    (test-score "simple-pitched-voice" score))
-  
-  (let* ([voices-group (make-simple-voices-group (list pitched-voice keyboard-voice))]
-         [score (make-score "simple pitched and keyboard voices" (list voices-group))])
-    (test-score "simple-pitched-and-keyboard-voices" score))
+  (let* ([voices-group (make-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
+         [score (make-score "split staff simple pitched and keyboard voices" (list voices-group))])
+    (test-score "split-staff-simple-pitched-and-keyboard-voices" score))
   )
   
 
