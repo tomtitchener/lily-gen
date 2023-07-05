@@ -3,6 +3,8 @@
 ;; score-syms: symbol lists and predicates, get used in text to create atoms in Score
 
 (provide
+ pitch/c
+ maybe-pitch/c
  ;; all are either (listof symbol?) or (-> symbol? boolean?)
  pitch-class-syms
  pitch-class?
@@ -27,7 +29,12 @@
  clef-syms
  clef?
  mode-syms
- mode?)
+ mode?
+ (contract-out
+  [octave-list-idx (-> octave? natural-number/c)]
+  [octave-list-ref (-> natural-number/c octave?)]
+  )
+ )
 
 ;; - - - - - - - - -
 ;; implementation
@@ -60,6 +67,20 @@
    22va))
 
 (define (octave? o) (and (symbol? o) (member o octave-syms)))
+
+(define (octave-list-idx oct)
+  (list-index ((curry eq?) oct) octave-syms))
+
+(define (octave-list-ref idx)
+  (when (or (< idx 0) (>= idx (length octave-syms)))
+    (error 'octave-list-ref "idx: ~v out of range for octave-syms ~v" idx octave-syms))
+  (list-ref octave-syms idx))
+
+(define pitch/c
+  (make-flat-contract #:name 'pitch/c #:first-order (cons/c pitch-class? octave?)))
+
+(define maybe-pitch/c
+  (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c pitch/c false/c)))
 
 (define duration-syms
  '(W.  W

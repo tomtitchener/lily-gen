@@ -234,9 +234,9 @@
 
 ;; (-> Score? string?)
 (define (score->lily score)
-  (let ([title        (Score-title        score)]
-        [seed         (Score-seed         score)]
-        [voice-groups (Score-voice-groups score)])
+  (let ([title        (Score-title         score)]
+        [seed         (Score-seed          score)]
+        [voice-groups (Score-voices-groups score)])
     @string-append{
     \include "articulate.ly"
     \version "@(getenv "LILYPOND_VERSION")"

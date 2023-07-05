@@ -39,12 +39,22 @@
  ;; - - - - - - - - -
  ;; Utilities
  (contract-out
+  [pitch->chromatic-idx (-> pitch/c natural-number/c)]
+    
+  ;; what is the index in c-ordered-enharmonic-pitch-class-symss for pitch-class?
+  [pitch-class->chromatic-enharmonic-index (-> pitch-class? natural-number/c)]
+  
+  ;; pitch for index from full-range of pitches for scale for all pitches for all octaves
   [idx->pitch (-> Scale? natural-number/c pitch/c)]
   
+  ;; index for pitch is the count of pitches from the lowest possible pitch of c-ordered scale
   [pitch->idx (-> Scale? pitch/c natural-number/c)]
 
-  [pitch->chromatic-idx (-> pitch/c natural-number/c)]
- 
+  [compare-pitches (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)]
+
+  ;; pitch-range-pair is inclusive
+  [pitch-in-range? (-> Scale? pitch-range-min-max-pair/c pitch/c boolean?)]
+  
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
   ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
@@ -89,19 +99,9 @@
 
 (require binary-class/contract)
 
-(require (only-in "score.rkt" octave-syms octave? pitch-class? duration? pitch/c maybe-pitch/c Note Note?))
+(require (only-in "score-syms.rkt" octave-syms octave? octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c))
 
 (require (only-in "utils.rkt" rotate-list-by))
-
-(define/contract (octave-list-idx oct)
-  (-> octave? natural-number/c)
-  (list-index ((curry eq?) oct) octave-syms))
-
-(define/contract (octave-list-ref idx)
-  (-> natural-number/c octave?)
-  (when (or (< idx 0) (>= idx (length octave-syms)))
-    (error 'octave-list-ref "idx: ~v out of range for octave-syms ~v" idx octave-syms))
-  (list-ref octave-syms idx))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -237,9 +237,15 @@
                   Fs  Cs  Gs  Ds  As  Es  Bs
                   Fss Css Gss Dss)
 
-;; what is the index in c-ordered-enharmonic-pitch-class-symss for pitch-class?
-(define/contract (pitch-class->chromatic-enharmonic-index pitch-class)
-  (-> pitch-class? natural-number/c)
+;; (-> pitch/c natural-number/c)
+(define (pitch->chromatic-idx pitch)
+  (let ([octave-idx (octave-list-idx (cdr pitch))]
+        [pitch-classes-idx (pitch-class->chromatic-enharmonic-index (car pitch))]
+        [pitch-classes-count (length c-ordered-enharmonic-pitch-class-symss)])
+    (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
+
+;; (-> pitch/c natural-number/c)
+(define (pitch-class->chromatic-enharmonic-index pitch-class)
   (index-where c-ordered-enharmonic-pitch-class-symss (lambda (enh-syms) (member pitch-class enh-syms))))
 
 ;; order pitch classes in a scale for transposition relative to C octaves for lilypond notation
@@ -247,7 +253,6 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
-;; (-> Scale? natural-number/c pitch/c)
 (define (idx->pitch scale idx)
   (when (> idx (scale->max-idx scale))
     (error 'idx->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
@@ -256,7 +261,6 @@
     (let-values ([(q r) (quotient/remainder idx pitch-classes-count)])
       (cons (pitch-class-list-ref pitch-classes r) (octave-list-ref q)))))
 
-;; index for pitch is the count of pitches from the lowest possible pitch of c-ordered scale
 ;; (-> Scale? pitch/c natural-number/c)
 (define (pitch->idx scale pitch)
   (let* ([octave-idx          (octave-list-idx (cdr pitch))]
@@ -265,12 +269,16 @@
          [pitch-classes-count (length pitch-classes)])
     (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
 
-;; (-> pitch/c natural-number/c)
-(define (pitch->chromatic-idx pitch)
-  (let ([octave-idx (octave-list-idx (cdr pitch))]
-        [pitch-classes-idx (pitch-class->chromatic-enharmonic-index (car pitch))]
-        [pitch-classes-count (length c-ordered-enharmonic-pitch-class-symss)])
-    (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
+;; to compare two pitches from the same scale compare their pitch indices 
+(define (compare-pitches op scale pitch-1 pitch-2)
+  (op (pitch->idx scale pitch-1) (pitch->idx scale pitch-2)))
+
+;; pitch-range-pair is inclusive
+(define (pitch-in-range? scale pitch-range-pair pitch)
+  (let ([min-pitch (car pitch-range-pair)]
+        [max-pitch (cdr pitch-range-pair)])
+    (and (compare-pitches >= scale pitch min-pitch)
+         (compare-pitches <= scale pitch max-pitch))))
 
 (define pitch-range-pair/c
   (make-flat-contract #:name 'pitch-range-pair/c #:first-order (cons/c pitch/c pitch/c)))
@@ -278,19 +286,6 @@
 ;; tbd: make into structs to verify construction, e.g. pitch-range-min-max-pair/c should test first is lower than second
 (define pitch-range-min-max-pair/c
   (make-flat-contract #:name 'pitch-range-min-max-pair/c #:first-order (cons/c pitch/c pitch/c)))
-
-;; to compare two pitches from the same scale compare their pitch indices 
-(define/contract (compare-pitches op scale pitch-1 pitch-2)
-  (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)
-  (op (pitch->idx scale pitch-1) (pitch->idx scale pitch-2)))
-
-;; pitch-range-pair is inclusive
-(define/contract (pitch-in-range? scale pitch-range-pair pitch)
-  (-> Scale? pitch-range-min-max-pair/c pitch/c boolean?)
-  (let ([min-pitch (car pitch-range-pair)]
-        [max-pitch (cdr pitch-range-pair)])
-    (and (compare-pitches >= scale pitch min-pitch)
-         (compare-pitches <= scale pitch max-pitch))))
 
 (define/contract (pitch-is-scale-member? scale pitch)
   (-> Scale? pitch/c boolean?)
@@ -343,7 +338,7 @@
 ;; starting from 0 to the final index, inclusive
 ;; - diatonic scales (major, harmonic minor): (0 . 55) 
 ;; - whole-tone scales: (0 . 47)
-;; - chromatic scales: (0 . 95)]
+;; - chromatic scales: (0 . 5)]
 (define/contract (scale->max-idx scale)
   (-> Scale? unsigned-integer/c)
   (let ([cnt-pcs  (length (Scale-pitch-classes scale))]
@@ -384,35 +379,6 @@
 
 (module+ test
   (require rackunit)
-  (define (scale->pitch-range/old scale)
-    (let ([max-idx (scale->max-idx scale)]
-          [start-pitch (idx->pitch scale 0)])
-      (transpose/absolute scale (scale->pitch-range-min-max-pair scale) start-pitch (range 0 (add1 max-idx)))))
-  (check-equal? (scale->pitch-range C-major) (scale->pitch-range/old C-major))
-  (check-equal? (scale->pitch-range Cff-major) (scale->pitch-range/old Cff-major))
-  (check-equal? (scale->pitch-range Fss-major) (scale->pitch-range/old Fss-major))
-  (check-equal? (scale->pitch-range C-major) (scale->pitch-range/old C-major))
-  (define/contract (filter-pitch-in-range scale pitch-range-pair pitch)
-    (-> Scale? pitch-range-min-max-pair/c pitch/c maybe-pitch/c)
-    (if (pitch-in-range? scale pitch-range-pair pitch) pitch #f))
-  (define (xpose/old scale pitch-range-pair pitch interval)
-    (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
-      (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-    (let* ([pcs       (Scale-pitch-classes (scale->c-ordering scale))]
-           [pcs-cnt   (length pcs)]
-           [pitch-idx (pitch->idx scale pitch)]
-           [xp-pitch-idx (+ pitch-idx interval)])
-      (let-values ([(q r) (quotient/remainder xp-pitch-idx pcs-cnt)])
-        (let ([xp-pitch (cons (pitch-class-list-ref pcs r) (octave-list-ref q))])
-          (filter-pitch-in-range scale pitch-range-pair xp-pitch)))))
-  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 1)
-                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 1))
-  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -1)
-                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -1))
-  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 15)
-                  (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) 15))
-  (check-equal? (xpose C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -15)
-                (xpose/old C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) -15))
   (check-equal?
    (transpose/successive C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))

@@ -25,8 +25,6 @@
  (struct-out TimeSignatureCompound)
  ;; - - - - - - - - -
  ;; contracts
- pitch/c
- maybe-pitch/c
  control/c
  num-denom/c
  tempo/c
@@ -41,11 +39,7 @@
 ;; implementation
 (require "score-syms.rkt")
 
-(define pitch/c
-  (make-flat-contract #:name 'pitch/c #:first-order (cons/c pitch-class? octave?)))
-
-(define maybe-pitch/c
-  (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c pitch/c false/c)))
+(require (only-in "scale.rkt" pitch->chromatic-idx))
 
 (define control/c
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
@@ -64,12 +58,12 @@
 
 (struct/contract Spacer ([dur duration?]) #:transparent)
 
-;; tbd: guarded ctor that orders pitches low-to-high, eliminates duplicates
-(struct/contract Chord ([pitches  (listof pitch/c)]
-                        [dur      duration?]
-                        [controls (listof control/c)]
-                        [tie      boolean?])
-                 #:transparent)
+(define/contract (chord-ctor-guard pitches dur controls tie type-name)
+  (-> (listof pitch/c) duration? (listof control/c) boolean? symbol? (values (listof pitch/c) duration? (listof control/c) boolean?))
+  (let ([sorted-pitches (sort pitches < #:key pitch->chromatic-idx)])
+    (values sorted-pitches dur controls tie)))
+
+(struct Chord (pitches dur controls tie) #:guard chord-ctor-guard #:transparent)
 
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
@@ -140,6 +134,9 @@
                                   [voiceevents (listof voice-event/c)])
                  #:transparent)
 
+(define voice/c
+  (make-flat-contract #:name 'voice/c #:first-order (or/c PitchedVoice? KeyboardVoice? SplitStaffVoice?)))
+
 ;; TBD: add PercussionVoice.  Note one instrument e.g. timbales might have two "notes" e.g. timh and timl
 ;; or for melodic tom-tom: tomfl tomfh toml tomh tomml tommh, and etc.
 ;; see https://lilypond.org/doc/v2.24/Documentation/notation/percussion-notes
@@ -148,17 +145,18 @@
 ;; - otherwise notation for a percussion note follows lilypond convention e.g. toml4 tomh8->
 ;; see https://lilypond.org/doc/v2.24/Documentation/snippets/percussion
 
-
-(define voice/c
-  (make-flat-contract #:name 'voice/c #:first-order (or/c PitchedVoice? KeyboardVoice? SplitStaffVoice?)))
-
 (struct/contract VoicesGroup ([tempo          tempo/c]
                               [time-signature time-signature/c]
                               [voices         (listof voice/c)])
                  #:transparent)
 
-;; tbd: all VoicesGroup in (listof VoicesGroup?) should have the same length (listof voice/c)
-;; need guarded ctor
-(struct/contract Score ([title        string?]
-                        [seed         string?]
-                        [voice-groups (listof VoicesGroup?)]))
+(define/contract (score-ctor-guard title seed voices-groups type-name)
+  (-> string? string? (listof VoicesGroup?) symbol? (values string? string? (listof VoicesGroup?)))
+  (if (= 1 (length voices-groups))
+      (values title seed voices-groups)
+      (let ([voices-group-lengths (map (lambda (voices-group) (length (VoicesGroup-voices voices-group))) voices-groups)])
+        (when (not (= voices-group-lengths))
+          (error 'score-ctor-guard "unequal counts of voices in VoicesGroups: ~v" voices-group-lengths))
+        (values title seed voices-groups))))
+
+(struct Score (title seed voices-groups) #:guard score-ctor-guard #:transparent)
