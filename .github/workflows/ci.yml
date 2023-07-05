@@ -22,5 +22,5 @@ jobs:
       - name: Run Tests
         run: |
           export LILYPOND_VERSION=2.22
-	  mkdir ./test
+          mkdir ./test
           raco test .
