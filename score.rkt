@@ -157,6 +157,8 @@
                               [voices         (listof voice/c)])
                  #:transparent)
 
+;; tbd: all VoicesGroup in (listof VoicesGroup?) should have the same length (listof voice/c)
+;; need guarded ctor
 (struct/contract Score ([title        string?]
                         [seed         string?]
                         [voice-groups (listof VoicesGroup?)]))

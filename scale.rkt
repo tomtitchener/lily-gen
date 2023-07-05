@@ -208,8 +208,6 @@
 (define-syntax (make-major-scale stx)
   (syntax-case stx ()
     [(_ a)
-     ;; tbd: gave up trying to make lower-case pitch-class
-     ;; e.g. c-major instead of C-major
      (with-syntax ([name (format-id #'a "~a-major" #'a)])
        #'(define name (major-scale 'a)))]
     [(_ a b ...)
@@ -220,8 +218,6 @@
 (define-syntax (make-minor-scale stx)
   (syntax-case stx ()
     [(_ a)
-     ;; tbd: gave up trying to make lower-case pitch-class
-     ;; e.g. c-minor instead of C-minor
      (with-syntax ([name (format-id #'a "~a-minor" #'a)])
        #'(define name (minor-scale 'a)))]
     [(_ a b ...)
@@ -276,10 +272,10 @@
         [pitch-classes-count (length c-ordered-enharmonic-pitch-class-symss)])
     (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
 
-;; tbd: make into structs to verify construction
 (define pitch-range-pair/c
   (make-flat-contract #:name 'pitch-range-pair/c #:first-order (cons/c pitch/c pitch/c)))
 
+;; tbd: make into structs to verify construction, e.g. pitch-range-min-max-pair/c should test first is lower than second
 (define pitch-range-min-max-pair/c
   (make-flat-contract #:name 'pitch-range-min-max-pair/c #:first-order (cons/c pitch/c pitch/c)))
 
