@@ -1,5 +1,4 @@
 #lang racket
-
 ;; scale:
 ;; 1) Scale struct, and scales:
 ;; - chromatic
@@ -33,7 +32,7 @@
  ;; harmonic minor scales from Aff to Dss
  (matching-identifiers-out #rx".*-minor" (all-defined-out))
 
- ;; min/max pitches for a range
+ ;; pitches for a range, may be low / high or high / low
  pitch-range-pair/c
  
  ;; - - - - - - - - -
@@ -53,17 +52,17 @@
   [compare-pitches (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)]
 
   ;; pitch-range-pair is inclusive
-  [pitch-in-range? (-> Scale? pitch-range-min-max-pair/c pitch/c boolean?)]
+  [pitch-in-range? (-> Scale? PitchRangeMinMaxPair? pitch/c maybe-pitch/c)]
   
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
   ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
-  [xpose (-> Scale? pitch-range-min-max-pair/c pitch/c signed-integer/c maybe-pitch/c)]
+  [xpose (-> Scale? PitchRangeMinMaxPair? pitch/c signed-integer/c maybe-pitch/c)]
  
   ;; transpose from the starting pitch using the list of integers to transpose
   ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
   [transpose/successive (-> Scale?
-                            pitch-range-min-max-pair/c
+                            PitchRangeMinMaxPair?
                             pitch/c
                             (or/c signed-integer/c (listof signed-integer/c))
                             (or/c maybe-pitch/c (listof maybe-pitch/c)))]
@@ -74,16 +73,16 @@
   ;; else for a list of signed-integer/c, answer multiple pitch/c to transpose repeatedly from the
   ;; starting pitch, e.g. (1 2 3 ...) for a step-by-step progression
   [transpose/absolute (-> Scale?
-                          pitch-range-min-max-pair/c
+                          PitchRangeMinMaxPair?
                           pitch/c
                           (or/c signed-integer/c (listof signed-integer/c))
-                          (or/c maybe-pitch/c maybe-pitch/c))]
+                          (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
   ;; minimum and maximum pitches for a scale
-  [scale->pitch-range-min-max-pair (-> Scale? pitch-range-min-max-pair/c)]
+  [scale->PitchRangeMinMaxPair (-> Scale? PitchRangeMinMaxPair?)]
 
   ;; all pitches for a scale in ascending order
-  ;; - if optional pitch-range-min-max-pair/c then ascending or descending sub-range within all pitches for scale
+  ;; - if optional PitchRangeMinMaxPair? then ascending or descending sub-range within all pitches for scale
   ;; - if additional natural-number/c then in steps by value (default 1)
   [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]))
 
@@ -275,64 +274,68 @@
 
 ;; pitch-range-pair is inclusive
 (define (pitch-in-range? scale pitch-range-pair pitch)
-  (let ([min-pitch (car pitch-range-pair)]
-        [max-pitch (cdr pitch-range-pair)])
-    (and (compare-pitches >= scale pitch min-pitch)
-         (compare-pitches <= scale pitch max-pitch))))
+  (let ([min-pitch (PitchRangeMinMaxPair-min pitch-range-pair)]
+        [max-pitch (PitchRangeMinMaxPair-max pitch-range-pair)])
+    (if (and (compare-pitches >= scale pitch min-pitch) (compare-pitches <= scale pitch max-pitch))
+        pitch
+        #f)))
 
 (define pitch-range-pair/c
   (make-flat-contract #:name 'pitch-range-pair/c #:first-order (cons/c pitch/c pitch/c)))
 
-;; tbd: make into structs to verify construction, e.g. pitch-range-min-max-pair/c should test first is lower than second
-(define pitch-range-min-max-pair/c
-  (make-flat-contract #:name 'pitch-range-min-max-pair/c #:first-order (cons/c pitch/c pitch/c)))
+(define/contract (pitch-range-min-max-pair-ctor scale min max type-name)
+  (-> Scale? pitch/c pitch/c symbol? (values Scale? pitch/c pitch/c))
+  (when (compare-pitches >= scale min max)
+    (error 'PitchRangeMinMaxPair "min %v is not < max %v" min max))
+  (values scale min max))
+
+(struct PitchRangeMinMaxPair (scale min max) #:guard pitch-range-min-max-pair-ctor #:transparent)
 
 (define/contract (pitch-is-scale-member? scale pitch)
   (-> Scale? pitch/c boolean?)
   (if (memq (car pitch) (Scale-pitch-classes scale)) #t #f))
 
 (define/contract (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
-  (-> Scale? pitch-range-min-max-pair/c boolean?)
-  (and (pitch-is-scale-member? scale (car pitch-range-pair))
-       (pitch-is-scale-member? scale (cdr pitch-range-pair))))
+  (-> Scale? PitchRangeMinMaxPair? boolean?)
+  (and (pitch-is-scale-member? scale (PitchRangeMinMaxPair-min pitch-range-pair))
+       (pitch-is-scale-member? scale (PitchRangeMinMaxPair-max pitch-range-pair))))
 
 ;; guard xpose, transpose/successive, transpose/absolute inputs
 ;; scale, starting pitch and range to make sure all pitches are
 ;; members of scale
-(define/contract (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch)
-  (-> Scale? pitch-range-min-max-pair/c pitch/c  boolean?)
-  (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
+(define/contract (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch)
+  (-> Scale? PitchRangeMinMaxPair? pitch/c boolean?)
+  (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-min-max-pair)
        (pitch-is-scale-member? scale pitch)))
 
-;; Note: slightly expensive due to call to (scale->pitch-range scale),
-;; but guards input ranges
-;; (-> Scale? pitch-range-min-max-pair/c pitch/c signed-integer/c maybe-pitch/c)
-(define (xpose scale pitch-range-pair pitch interval)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
-    (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (xpose/internal scale pitch (scale->pitch-range scale) interval))
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c signed-integer/c maybe-pitch/c)
+(define (xpose scale pitch-range-min-max-pair pitch interval)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
+    (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
+  (xpose/internal scale pitch (scale->pitch-range scale) pitch-range-min-max-pair interval))
 
-(define (xpose/internal scale pitch pitch-range interval)
-  (let ([pitch-idx (list-index ((curry equal?) pitch) pitch-range)])
-    (idx->pitch scale (+ pitch-idx interval))))
+;; do *NOT* add a contract for this routine
+;; it gives an error on signed-integer/c for interval that I cannot understand.
+(define (xpose/internal scale pitch pitch-range-min-max-pair interval)
+  (let* ([pitch-idx (pitch->idx scale pitch)]
+         [xposed-pitch (idx->pitch scale (+ pitch-idx interval))])
+    (pitch-in-range? scale pitch-range-min-max-pair xposed-pitch)))
 
-;; (-> Scale? pitch/c pitch-range-min-max-pair/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/successive scale pitch-range-pair pitch interval/intervals)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
-    (error 'transpose/successive "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (let ([pitch-range (scale->pitch-range scale)])
-    (if (list? interval/intervals)
-        (map (lambda (interval) (xpose/internal scale pitch pitch-range interval)) (scanl + interval/intervals))
-        (xpose/internal scale pitch pitch-range interval/intervals))))
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/successive scale pitch-range-min-max-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
+    (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
+  (if (list? interval/intervals)
+      (map (lambda (interval) (xpose/internal scale pitch pitch-range-min-max-pair interval)) (scanl + interval/intervals))
+      (xpose/internal scale pitch pitch-range-min-max-pair interval/intervals)))
 
-;; (-> Scale? pitch/c pitch-range-min-max-pair/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/absolute scale pitch-range-pair pitch interval/intervals)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
-    (error 'transpose/absolute "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (let ([pitch-range (scale->pitch-range scale)])
-    (if (list? interval/intervals)
-        (map (lambda (interval) (xpose/internal scale pitch pitch-range interval)) interval/intervals)
-        (xpose/internal scale pitch pitch-range interval/intervals))))
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/absolute scale pitch-range-min-max-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
+    (error 'transpose/absolute "pitch-range-min-max-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
+  (if (list? interval/intervals)
+      (map (lambda (interval) (xpose/internal scale pitch pitch-range-min-max-pair interval)) interval/intervals)
+      (xpose/internal scale pitch pitch-range-min-max-pair interval/intervals)))
 
 ;; the max index for a list of pitches for the scale
 ;; starting from 0 to the final index, inclusive
@@ -346,9 +349,9 @@
     (sub1 (* cnt-octs cnt-pcs))))
 
 ;; full pitch range for scale is [0..(scale->max-idx scale)] inclusive
-;; (-> Scale? pitch-range-min-max-pair/c)
-(define (scale->pitch-range-min-max-pair scale)
-  (cons (idx->pitch scale 0) (idx->pitch scale (scale->max-idx scale))))
+;; (-> Scale? PitchRangeMinMaxPair?)
+(define (scale->PitchRangeMinMaxPair scale)
+  (PitchRangeMinMaxPair scale (idx->pitch scale 0) (idx->pitch scale (scale->max-idx scale))))
 
 (define/contract (scale->all-pitches scale)
   (-> Scale? (listof pitch/c))
@@ -359,7 +362,7 @@
 ;; (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))
 (define (scale->pitch-range scale [pitch-range-pair-or-f #f] [step 1])
   (let ([all-pitches (scale->all-pitches scale)]
-        [pitch-range-pair (if pitch-range-pair-or-f pitch-range-pair-or-f (scale->pitch-range-min-max-pair scale))])
+        [pitch-range-pair (if pitch-range-pair-or-f pitch-range-pair-or-f (scale->PitchRangeMinMaxPair scale))])
     (let ([start-idx (list-index ((curry equal?) (car pitch-range-pair)) all-pitches)]
           [stop-idx  (list-index ((curry equal?) (cdr pitch-range-pair)) all-pitches)])
       (when (= start-idx stop-idx)
@@ -380,7 +383,7 @@
 (module+ test
   (require rackunit)
   (check-equal?
-   (transpose/successive C-major (scale->pitch-range-min-max-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
+   (transpose/successive C-major (scale->PitchRangeMinMaxPair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))
   (check-exn exn:fail? (lambda () (xpose C-major (cons 'C '0va) 1000)))
   (for-each (lambda (sc)
