@@ -235,12 +235,12 @@
 ;; (-> Score? string?)
 (define (score->lily score)
   (let ([title        (Score-title         score)]
-        [seed         (Score-seed          score)]
+        [copyright    (Score-copyright     score)]
         [voice-groups (Score-voices-groups score)])
     @string-append{
     \include "articulate.ly"
     \version "@(getenv "LILYPOND_VERSION")"
-    \header { title = "@title" copyright = "@seed" }
+    \header { title = "@title" copyright = "@copyright" }
     structure = {
     <<
     @(string-join (map voice-group->lily voice-groups))
@@ -299,13 +299,8 @@
                                                           ascending-bass-voice-events-with-key-signature-and-clef)])
       (KeyboardVoice 'AcousticGrand keyboard-voice-events-pair)))
   
-  (define (make-simple-voices-group voices)
-    (let ([simple-tempo (TempoDur 'Q 120)]
-          [simple-time-signature (TimeSignatureSimple 4 'Q)])
-      (extend&align-voices-group-durations (VoicesGroup simple-tempo simple-time-signature voices))))
-
   (define (make-score title voices-groups)
-    (Score title "seed" voices-groups))
+    (Score title "copyright" voices-groups))
 
   (define (test-score file-name score)
     (let* ([output-file-name (string-append "test/" file-name ".ly")]
@@ -314,21 +309,48 @@
       (close-output-port output-port)
       (check-true (system (format "lilypond -s -o test ~v" output-file-name)))))  
 
-  (let* ([voices-group (make-simple-voices-group (list pitched-voice))]
-         [score (make-score "simple pitched voice" (list voices-group))])
-    (test-score "simple-pitched-voice" score))
+  (define (make-extended&aligned-simple-voices-group voices)
+    (let ([simple-tempo (TempoDur 'Q 120)]
+          [simple-time-signature (TimeSignatureSimple 4 'Q)])
+      (extend&align-voices-group-durations (VoicesGroup simple-tempo simple-time-signature voices))))
 
-  (let* ([voices-group (make-simple-voices-group (list split-staff-voice))]
-         [score (make-score "split staff voice" (list voices-group))])
-    (test-score "split-staff-voice" score))
+  (let* ([voices-group (make-extended&aligned-simple-voices-group (list pitched-voice))]
+         [score (make-score "exteded & aligned simple pitched voice" (list voices-group))])
+    (test-score "extended&aligned-simple-pitched-voice" score))
 
-  (let* ([voices-group (make-simple-voices-group (list keyboard-voice))]
-         [score (make-score "simple ascending keyboard voice" (list voices-group))])
-    (test-score "simple-ascending-keyboard-voice" score))
+  (let* ([voices-group (make-extended&aligned-simple-voices-group (list split-staff-voice))]
+         [score (make-score "exteded & aligned split staff voice" (list voices-group))])
+    (test-score "extended&aligned-split-staff-voice" score))
+
+  (let* ([voices-group (make-extended&aligned-simple-voices-group (list keyboard-voice))]
+         [score (make-score "exteded & aligned simple ascending keyboard voice" (list voices-group))])
+    (test-score "extended&aligned-simple-ascending-keyboard-voice" score))
   
-  (let* ([voices-group (make-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
-         [score (make-score "split staff simple pitched and keyboard voices" (list voices-group))])
-    (test-score "split-staff-simple-pitched-and-keyboard-voices" score))
+  (let* ([voices-group (make-extended&aligned-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
+         [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
+    (test-score "extended&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
+
+  (define (make-clipped&aligned-simple-voices-group voices)
+    (let ([simple-tempo (TempoDur 'Q 120)]
+          [simple-time-signature (TimeSignatureSimple 4 'Q)])
+      (clip&align-voices-group-durations (VoicesGroup simple-tempo simple-time-signature voices))))
+
+  (let* ([voices-group (make-clipped&aligned-simple-voices-group (list pitched-voice))]
+         [score (make-score "exteded & aligned simple pitched voice" (list voices-group))])
+    (test-score "clipped&aligned-simple-pitched-voice" score))
+
+  (let* ([voices-group (make-clipped&aligned-simple-voices-group (list split-staff-voice))]
+         [score (make-score "exteded & aligned split staff voice" (list voices-group))])
+    (test-score "clipped&aligned-split-staff-voice" score))
+
+  (let* ([voices-group (make-clipped&aligned-simple-voices-group (list keyboard-voice))]
+         [score (make-score "exteded & aligned simple ascending keyboard voice" (list voices-group))])
+    (test-score "clipped&aligned-simple-ascending-keyboard-voice" score))
+  
+  (let* ([voices-group (make-clipped&aligned-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
+         [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
+    (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
+  
   )
   
 

@@ -11,15 +11,24 @@
   
   ;; map align-voice-events-durations over one or more lists of voice-event/c in a voice/c
   [align-voice-durations (-> time-signature/c voice/c voice/c)]
-  
-  ;; find the voice-event/c in the listof voice-event/c with the longest cumulative duration,
+
+  ;; find the listof voice-event/c with the longest cumulative duration,
   ;; determine the duration to finish the current measure,
   ;; add rests to all listof voice-event/c to match the longest listof voice-event/c
   [extend-voices-durations (-> time-signature/c (listof voice/c) (listof voice/c))]
   
   ;; combine extend-voices-durations with align-voices-durations 
   ;; for the listof voice/c in the VoicesGroup
-  [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
+  [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]
+
+  ;; find the listof voice-event/c with the shortest cumulative duration,
+  ;; clip all voices to duration at the beginning of the last measure so
+  ;; they all end at the same measure
+  [clip-voices-durations (-> time-signature/c voice/c voice/c)]
+
+  ;; combine clip-voices-durations with align-voices-durations 
+  ;; for the listof voice/c in the VoicesGroup
+  [clip&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]))
 
 ;; - - - - - - - -
 ;; implementation
@@ -121,7 +130,7 @@
 
 ;; require list of durs for voices with multiple staves (KeyboardVoice)
 (define/contract (add-rests-for-durlens voice added-durlens)
-  (-> voice/c (listof natural?) voice/c)
+  (-> voice/c (listof natural-number/c) voice/c)
   (define (durlen->rests added-durlen) (map Rest (int->durations added-durlen)))
   (match voice
     [(PitchedVoice instr voice-events)
@@ -141,7 +150,7 @@
          [max-total-durlen      (apply max (flatten voices-total-durlens))]
          ;; len of bar
          [bar-durlen            (time-signature->barlen time-sig)]
-         ;; given max total-durlen, how much spills over into the last bar for the max-total-durlen?
+         ;; given max total-durlen, how much spills over into the last bar?
          [last-bar-spill-over   (modulo max-total-durlen bar-durlen)]
          ;; given last-bar-spill-over, how much remains to get to the end of that bar?
          [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
@@ -150,21 +159,59 @@
          [voices-rem-durlenss (map (lambda (durlens) (map ((curry -) target-total-durlen) durlens)) voices-total-durlens)])
     (map (lambda (voice rem-durlens) (add-rests-for-durlens voice rem-durlens)) voices voices-rem-durlenss)))
 
-#;(define (extend-voices-durations time-sig voices)
+(define/contract (replace-voice-event-durlen voice-event durlen)
+  (-> voice-event/c natural-number/c (listof voice-event/c))
+  (let ([durs (int->durations durlen)])
+    (match voice-event
+      [(Note _ _ _ _ _)     (spread-note-or-chord-durations voice-event durs)]
+      [(Chord _ _ _ _)      (spread-note-or-chord-durations voice-event durs)]
+      [(Rest _)             (map Rest durs)]
+      [(Spacer dur)         (map Spacer durs)]
+      [(Tuplet _ _ _ notes) (flatten (map replace-voice-event-durlen notes (duration->int durs)))]
+      [(KeySignature _ _)   (error 'replace-voice-event-durlen "unexpected voice-event ~v" voice-event)]
+      [(? clef?)            (error 'replace-voice-event-durlen "unexpected voice-event ~v" voice-event)])))
+
+(define/contract (clip-voice-events total-durlen voice-events)
+  (-> natural-number/c (listof voice-event/c) (listof voice-event/c)) 
+  (let* ([voice-events-start (take-while (sum<=? voice-event->duration-int total-durlen) voice-events)]
+         [voice-events-start-len (apply + (map voice-event->duration-int voice-events-start))])
+    (cond
+      [(= voice-events-start-len total-durlen)
+       voice-events-start]
+      [(< voice-events-start-len total-durlen)
+       (let* ([next-voice-event (list-ref (length voice-events-start) voice-events)]
+              [last-durlen (- total-durlen (voice-event->duration-int next-voice-event))])
+         (append voice-events (replace-voice-event-durlen last-durlen next-voice-event)))]
+      [else
+       (error 'clip-voice-events
+              "voice-events-start-len ~v > total-durlen ~v"
+              voice-events-start-len total-durlen)])))
+       
+;; require list of durs for voices with multiple staves (KeyboardVoice)
+(define/contract (clip-voice-events-at-total-durlen total-durlen voice)
+  (-> natural-number/c voice/c voice/c)
+  (match voice
+    [(PitchedVoice instr voice-events)
+     (PitchedVoice instr (clip-voice-events total-durlen voice-events))]
+    [(KeyboardVoice instr voice-events-pr)
+     (KeyboardVoice instr (cons (clip-voice-events total-durlen (car voice-events-pr))
+                                (clip-voice-events total-durlen (cdr voice-events-pr))))]
+    [(SplitStaffVoice instr voice-events)
+     (SplitStaffVoice instr (clip-voice-events total-durlen voice-events))]))
+  
+;; (-> time-signature/c (listof voice/c) (listof voice/c))
+(define (clip-voices-durations time-sig voices)
   (let* (;; list of list of total durlens per voice e.g. '((24) (24 32) (18))
-         [voices-total-durlens (flatten (map voice->total-durs voices))]
+         [voices-total-durlens (map voice->total-durs voices)] ;; flatten is cause of loss of structure
          ;; max of all list of list of total durlens, e.g. 32, make voices at least this long
-         [max-total-durlen      (apply max voices-total-durlens)]
+         [min-total-durlen      (apply min (flatten voices-total-durlens))]
          ;; len of bar
          [bar-durlen            (time-signature->barlen time-sig)]
-         ;; given max total-durlen, how much spills over into the last bar for the max-total-durlen?
-         [last-bar-spill-over   (modulo max-total-durlen bar-durlen)]
-         ;; given last-bar-spill-over, how much remains to get to the end of that bar?
-         [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
-         ;; target total durlen is sum of max-total-durlen and last-bar-remainder
-         [target-total-durlen   (+ max-total-durlen last-bar-remainder)]
-         [voices-rem-durlens    (map ((curry -) target-total-durlen) voices-total-durlens)])
-    (map (lambda (voice rem-durlen) (add-rests-for-durlens voice (list rem-durlen))) voices voices-rem-durlens)))
+         ;; given min total-durlen, how much spills over into the last bar?
+         [last-bar-spill-over   (modulo min-total-durlen bar-durlen)]
+         ;; target total durlen is diff of min-total-durlen and last-bar-spill-over
+         [target-total-durlen   (- min-total-durlen last-bar-spill-over)])
+    (map ((curry clip-voice-events-at-total-durlen) target-total-durlen) voices)))
 
 ;; spread note-or-chord (except for dur) across all durs with pitch or pitches
 ;; from input with:
@@ -172,7 +219,7 @@
 ;; * controls only for the first
 ;; called when dur for note or chord spans beat or bar divisions
 (define/contract (spread-note-or-chord-durations note-or-chord durs)
-  (-> (or/c Note? Chord?) (listof duration?) (listof (or/c Note? Chord?)))
+  (-> (or/c Note? Chord?) (listof duration?) (or/c (listof Note?) (listof Chord?)))
   (let ([copy-note-or-chord
          (lambda (note-or-chord dur controls tie)
            (match note-or-chord
@@ -329,13 +376,15 @@
          [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
     (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
 
-#;(define (extend&align-voices-group-durations-orig voices-group)  
+;; clip all voices to duration of end of last full bar for the shortest voice
+;; (-> VoicesGroup? VoicesGroup?)
+(define (clip&align-voices-group-durations voices-group)  
   (let* ([time-signature  (VoicesGroup-time-signature voices-group)]
          ;; first extend all voices to end at the last bar line
-         [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
+         [clipped-voices (clip-voices-durations time-signature (VoicesGroup-voices voices-group))]
          ;; then align voice-event durations to reflect the meter
-         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
-    (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
+         [clipped&aligned-voices (map ((curry align-voice-durations) time-signature) clipped-voices)])
+    (struct-copy VoicesGroup voices-group [voices clipped&aligned-voices])))
 
 (module+ test
   (require rackunit)

@@ -37,7 +37,7 @@
     [(KeySignature _ _) 0]
     [(? clef?)          0]))
 
-;; answser list of total durs because KeyboardVoice has treble and bass voices
+;; answer list of total durs because KeyboardVoice has treble and bass voices
 ;; (-> voice/c (listof natural-number/c))
 (define (voice->total-durs voice)
   (match voice

@@ -150,13 +150,13 @@
                               [voices         (listof voice/c)])
                  #:transparent)
 
-(define/contract (score-ctor-guard title seed voices-groups type-name)
+(define/contract (score-ctor-guard title copyright voices-groups type-name)
   (-> string? string? (listof VoicesGroup?) symbol? (values string? string? (listof VoicesGroup?)))
   (if (= 1 (length voices-groups))
-      (values title seed voices-groups)
+      (values title copyright voices-groups)
       (let ([voices-group-lengths (map (lambda (voices-group) (length (VoicesGroup-voices voices-group))) voices-groups)])
         (when (not (= voices-group-lengths))
           (error 'score-ctor-guard "unequal counts of voices in VoicesGroups: ~v" voices-group-lengths))
-        (values title seed voices-groups))))
+        (values title copyright voices-groups))))
 
-(struct Score (title seed voices-groups) #:guard score-ctor-guard #:transparent)
+(struct Score (title copyright voices-groups) #:guard score-ctor-guard #:transparent)
