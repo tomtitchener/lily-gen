@@ -10,9 +10,13 @@
 ;; not sure how number ranges would signify, for proportions,
 ;; 
 
-(require srfi/1)
+(require (only-in srfi/1 unfold))
 
-(provide test test2 test3)
+(require (only-in seq iterate take))
+
+(require relation/type)
+
+(provide iter-sum)
 
 ;; srfi-1
 ;; unfold p f g [tail-gen] -> list
@@ -135,3 +139,47 @@
 (define print-state (dispatcher 'print))
 (define inc-state (dispatcher 'inc!))
 
+;; cloned from Haskell in /Archive/Dechert/Development/OldHaskell/Test.hs:
+;;
+;;data VoiceGen = VoiceGen {
+;;      voiceGenKernel :: [Int]		   -- kernel list
+;;      , voiceGenInit :: [Int]		   -- initializer list
+;;      , voiceGenIter :: Int		   -- iteration count
+;;      , voiceGenOp   :: (Int -> Int -> Int) -- operation, e.g. (+)
+;;      , voiceGenOff  :: Int		   -- offset
+;;      , voiceGenDur  :: Duration.T          -- duration
+;;      }
+;;
+;; --melodyFromVoiceGen :: VoiceGen -> Music.T (Melody.Note ())
+;; melodyFromVoiceGen :: VoiceGen -> Melody.T ()
+;; melodyFromVoiceGen vgen = 
+;;     line notes
+;;     where
+;;       notes = map (\n -> note n dur ()) pitches
+;;       pitches = map fromInt absPitches
+;;       absPitches = concat $ Prelude.take iter absPitchIter
+;;       absPitchIter = iterate absPitchGen init
+;;       absPitchGen = (\abs -> [off + (k `op` i) | k <- kern, i <- abs]) 
+;;       kern = voiceGenKernel vgen
+;;       init = voiceGenInit vgen
+;;       iter = voiceGenIter vgen
+;;       off = voiceGenOff vgen
+;;       dur = voiceGenDur vgen
+;;       op = voiceGenOp vgen
+
+;; Racket/Haskell equivalents:
+;; I *cannot* figure out what contract should look like for iter-fun and iter-sum
+(define (iter-fun off kern)
+  (lambda (inits)
+    (for*/list ([k kern] [i inits])
+      (+ off k i))))
+
+(define (iter-sum generations kern inits)
+  (->list (take generations (iterate (iter-fun 0 kern) inits))))
+
+;; unfold.rkt> (iter-sum 3 '(1 5 1) '(1 1))
+;; '((1 1) (2 2 6 6 2 2) (3 3 7 7 3 3 7 7 11 11 7 7 3 3 7 7 3 3))
+;;
+; ;ghci> take 3 $ iterate (\abs -> [(k + i) | k <- [1,5,1], i <- abs]) [1,1]
+;; take 3 $ iterate (\abs -> [(k + i) | k <- [1,5,1], i <- abs]) [1,1]
+;; [[1,1],[2,2,6,6,2,2],[3,3,7,7,3,3,7,7,11,11,7,7,3,3,7,7,3,3]]

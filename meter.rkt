@@ -156,7 +156,7 @@
          [last-bar-remainder    (if (zero? last-bar-spill-over) 0 (- bar-durlen last-bar-spill-over))]
          ;; target total durlen is sum of max-total-durlen and last-bar-remainder
          [target-total-durlen   (+ max-total-durlen last-bar-remainder)]
-         [voices-rem-durlenss (map (lambda (durlens) (map ((curry -) target-total-durlen) durlens)) voices-total-durlens)])
+         [voices-rem-durlenss (map (lambda (durlens) (map (curry - target-total-durlen) durlens)) voices-total-durlens)])
     (map (lambda (voice rem-durlens) (add-rests-for-durlens voice rem-durlens)) voices voices-rem-durlenss)))
 
 (define/contract (replace-voice-event-durlen voice-event durlen)
@@ -373,7 +373,7 @@
          ;; first extend all voices to end at the last bar line
          [extended-voices (extend-voices-durations time-signature (VoicesGroup-voices voices-group))]
          ;; then align voice-event durations to reflect the meter
-         [extended&aligned-voices (map ((curry align-voice-durations) time-signature) extended-voices)])
+         [extended&aligned-voices (map (curry align-voice-durations time-signature) extended-voices)])
     (struct-copy VoicesGroup voices-group [voices extended&aligned-voices])))
 
 ;; clip all voices to duration of end of last full bar for the shortest voice
@@ -383,7 +383,7 @@
          ;; first extend all voices to end at the last bar line
          [clipped-voices (clip-voices-durations time-signature (VoicesGroup-voices voices-group))]
          ;; then align voice-event durations to reflect the meter
-         [clipped&aligned-voices (map ((curry align-voice-durations) time-signature) clipped-voices)])
+         [clipped&aligned-voices (map (curry align-voice-durations time-signature) clipped-voices)])
     (struct-copy VoicesGroup voices-group [voices clipped&aligned-voices])))
 
 (module+ test

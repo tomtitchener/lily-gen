@@ -39,7 +39,7 @@
 ;; implementation
 (require "score-syms.rkt")
 
-(require (only-in "scale.rkt" pitch->chromatic-idx))
+(require (only-in "scale.rkt" pitch->chromatic-index))
 
 (define control/c
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
@@ -60,7 +60,7 @@
 
 (define/contract (chord-ctor-guard pitches dur controls tie type-name)
   (-> (listof pitch/c) duration? (listof control/c) boolean? symbol? (values (listof pitch/c) duration? (listof control/c) boolean?))
-  (let ([sorted-pitches (sort pitches < #:key pitch->chromatic-idx)])
+  (let ([sorted-pitches (sort pitches < #:key pitch->chromatic-index)])
     (values sorted-pitches dur controls tie)))
 
 (struct Chord (pitches dur controls tie) #:guard chord-ctor-guard #:transparent)

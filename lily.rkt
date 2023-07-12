@@ -236,10 +236,13 @@
 (define (score->lily score)
   (let ([title        (Score-title         score)]
         [copyright    (Score-copyright     score)]
-        [voice-groups (Score-voices-groups score)])
+        [voice-groups (Score-voices-groups score)]
+        [lilypond-version (getenv "LILYPOND_VERSION")])
+    (when (not lilypond-version)
+      (error 'score->lily "no LILYPOND_VERSION environment variable"))
     @string-append{
     \include "articulate.ly"
-    \version "@(getenv "LILYPOND_VERSION")"
+    \version "@lilypond-version"
     \header { title = "@title" copyright = "@copyright" }
     structure = {
     <<

@@ -69,7 +69,7 @@
 (define (octave? o) (and (symbol? o) (member o octave-syms)))
 
 (define (octave-list-idx oct)
-  (list-index ((curry eq?) oct) octave-syms))
+  (list-index (curry eq? oct) octave-syms))
 
 (define (octave-list-ref idx)
   (when (or (< idx 0) (>= idx (length octave-syms)))

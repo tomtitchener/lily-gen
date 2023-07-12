@@ -38,17 +38,18 @@
  ;; - - - - - - - - -
  ;; Utilities
  (contract-out
-  [pitch->chromatic-idx (-> pitch/c natural-number/c)]
+  [pitch->chromatic-index (-> pitch/c natural-number/c)]
     
   ;; what is the index in c-ordered-enharmonic-pitch-class-symss for pitch-class?
   [pitch-class->chromatic-enharmonic-index (-> pitch-class? natural-number/c)]
   
   ;; pitch for index from full-range of pitches for scale for all pitches for all octaves
-  [idx->pitch (-> Scale? natural-number/c pitch/c)]
+  [index->pitch (-> Scale? natural-number/c pitch/c)]
   
   ;; index for pitch is the count of pitches from the lowest possible pitch of c-ordered scale
-  [pitch->idx (-> Scale? pitch/c natural-number/c)]
+  [pitch->index (-> Scale? pitch/c natural-number/c)]
 
+  ;; compare two pitches from the same scale by the relational operator in the first argument
   [compare-pitches (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)]
 
   ;; pitch-range-pair is inclusive
@@ -84,13 +85,23 @@
   ;; all pitches for a scale in ascending order
   ;; - if optional PitchRangeMinMaxPair? then ascending or descending sub-range within all pitches for scale
   ;; - if additional natural-number/c then in steps by value (default 1)
-  [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]))
+  [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]
+
+  ;; iterate transposition of list of pitches by list of signed-integer/c for the number of generations in the first arg
+  [transpose/iterate (-> natural-number/c
+                         Scale?
+                         pitch/c
+                         PitchRangeMinMaxPair?
+                         (listof signed-integer/c)
+                         (listof signed-integer/c)
+                         (listof (listof pitch/c)))]
+  ))
 
 ;; - - - - - - - - -
 ;; implementation
 (require (only-in racket/provide matching-identifiers-out))
 
-(require (only-in seq find))
+(require (only-in seq iterate))
 
 (require (only-in algorithms scanl))
 
@@ -101,6 +112,8 @@
 (require (only-in "score-syms.rkt" octave-syms octave? octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c))
 
 (require (only-in "utils.rkt" rotate-list-by))
+
+(require (only-in "unfold.rkt" iter-sum))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -237,7 +250,7 @@
                   Fss Css Gss Dss)
 
 ;; (-> pitch/c natural-number/c)
-(define (pitch->chromatic-idx pitch)
+(define (pitch->chromatic-index pitch)
   (let ([octave-idx (octave-list-idx (cdr pitch))]
         [pitch-classes-idx (pitch-class->chromatic-enharmonic-index (car pitch))]
         [pitch-classes-count (length c-ordered-enharmonic-pitch-class-symss)])
@@ -252,16 +265,16 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
-(define (idx->pitch scale idx)
+(define (index->pitch scale idx)
   (when (> idx (scale->max-idx scale))
-    (error 'idx->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
+    (error 'index->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
   (let* ([pitch-classes       (Scale-pitch-classes (scale->c-ordering scale))]
          [pitch-classes-count (length pitch-classes)])
     (let-values ([(q r) (quotient/remainder idx pitch-classes-count)])
       (cons (pitch-class-list-ref pitch-classes r) (octave-list-ref q)))))
 
 ;; (-> Scale? pitch/c natural-number/c)
-(define (pitch->idx scale pitch)
+(define (pitch->index scale pitch)
   (let* ([octave-idx          (octave-list-idx (cdr pitch))]
          [pitch-classes       (Scale-pitch-classes (scale->c-ordering scale))]
          [pitch-classes-idx   (pitch-class-list-idx pitch-classes (car pitch))]
@@ -270,7 +283,7 @@
 
 ;; to compare two pitches from the same scale compare their pitch indices 
 (define (compare-pitches op scale pitch-1 pitch-2)
-  (op (pitch->idx scale pitch-1) (pitch->idx scale pitch-2)))
+  (op (pitch->index scale pitch-1) (pitch->index scale pitch-2)))
 
 ;; pitch-range-pair is inclusive
 (define (pitch-in-range? scale pitch-range-pair pitch)
@@ -317,8 +330,8 @@
 ;; do *NOT* add a contract for this routine
 ;; it gives an error on signed-integer/c for interval that I cannot understand.
 (define (xpose/internal scale pitch pitch-range-min-max-pair interval)
-  (let* ([pitch-idx (pitch->idx scale pitch)]
-         [xposed-pitch (idx->pitch scale (+ pitch-idx interval))])
+  (let* ([pitch-idx (pitch->index scale pitch)]
+         [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
     (pitch-in-range? scale pitch-range-min-max-pair xposed-pitch)))
 
 ;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
@@ -351,7 +364,7 @@
 ;; full pitch range for scale is [0..(scale->max-idx scale)] inclusive
 ;; (-> Scale? PitchRangeMinMaxPair?)
 (define (scale->PitchRangeMinMaxPair scale)
-  (PitchRangeMinMaxPair scale (idx->pitch scale 0) (idx->pitch scale (scale->max-idx scale))))
+  (PitchRangeMinMaxPair scale (index->pitch scale 0) (index->pitch scale (scale->max-idx scale))))
 
 (define/contract (scale->all-pitches scale)
   (-> Scale? (listof pitch/c))
@@ -387,6 +400,16 @@
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))
   (check-exn exn:fail? (lambda () (xpose C-major (cons 'C '0va) 1000)))
   (for-each (lambda (sc)
-              (for-each (lambda (n) (check-equal? n (pitch->idx sc (idx->pitch sc n))))
+              (for-each (lambda (n) (check-equal? n (pitch->index sc (index->pitch sc n))))
                         (range (scale->max-idx sc))))
             (list C-major chromatic-sharps chromatic-flats A-minor A-major)))
+
+
+;; - convert pitches into list of indexes for scale for the kernel argument to iter-sum
+;; - call iter-sum generations kernel intervals for the list of indexes
+;; - call transpose/absolute on the list of indexes with the first pitch from the kernel as start
+(define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch kernel-intervals init-intervals)
+  (let ([self-sim-indexess (iter-sum generations kernel-intervals init-intervals)])
+    (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
+
+        

@@ -282,7 +282,7 @@
 (define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)
   (define max-count-window-pitches 5)
   (define (max-note-for-clef clef) (if (symbol=? 'Bass clef) (cons 'F '0va) (cons 'G '8vb)))
-  (define (compare-pitches cmp pitch1 pitch2) (cmp (pitch->chromatic-idx pitch1) (pitch->chromatic-idx pitch2)))
+  (define (compare-pitches cmp pitch1 pitch2) (cmp (pitch->chromatic-index pitch1) (pitch->chromatic-index pitch2)))
   (define (pitch-within-clef? clef pitch)
     (let ([max-or-min-note (max-note-for-clef clef)]
           [cmp-op (if (symbol=? 'Bass clef) <= >=)])
@@ -328,7 +328,7 @@
              [_
               '()]))
          (let* ([pitches (append (tuplet-note->pitches notes))]
-                [sorted-pitches (sort pitches < #:key pitch->chromatic-idx)]
+                [sorted-pitches (sort pitches < #:key pitch->chromatic-index)]
                 [pitch (if (symbol=? current-clef 'Bass) (last sorted-pitches) (first sorted-pitches))])
            (fold-fun-inner (car pitch) (cdr pitch)))]
         [_
