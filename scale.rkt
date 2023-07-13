@@ -58,25 +58,25 @@
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
   ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
-  [xpose (-> Scale? PitchRangeMinMaxPair? pitch/c signed-integer/c maybe-pitch/c)]
+  [xpose (-> Scale? PitchRangeMinMaxPair? pitch/c exact-integer? maybe-pitch/c)]
  
   ;; transpose from the starting pitch using the list of integers to transpose
   ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
   [transpose/successive (-> Scale?
                             PitchRangeMinMaxPair?
                             pitch/c
-                            (or/c signed-integer/c (listof signed-integer/c))
+                            (or/c exact-integer? (listof exact-integer?))
                             (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
-  ;; transpose from the starting pitch using a single signed-integer/c or a list of signed-integer/c
+  ;; transpose from the starting pitch using a single exact-integer? or a list of exact-integer?
   ;; guarding resulting pitch/c against min and max pitches
-  ;; for a single signed-integer/c, just provide single pitch/c that is transpose/absolute called once
-  ;; else for a list of signed-integer/c, answer multiple pitch/c to transpose repeatedly from the
+  ;; for a single exact-integer?, just provide single pitch/c that is transpose/absolute called once
+  ;; else for a list of exact-integer?, answer multiple pitch/c to transpose repeatedly from the
   ;; starting pitch, e.g. (1 2 3 ...) for a step-by-step progression
   [transpose/absolute (-> Scale?
                           PitchRangeMinMaxPair?
                           pitch/c
-                          (or/c signed-integer/c (listof signed-integer/c))
+                          (or/c exact-integer? (listof exact-integer?))
                           (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
   ;; minimum and maximum pitches for a scale
@@ -87,13 +87,15 @@
   ;; - if additional natural-number/c then in steps by value (default 1)
   [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]
 
-  ;; iterate transposition of list of pitches by list of signed-integer/c for the number of generations in the first arg
+  ;; iterate transposition of list of pitches by list of list-comprehension over sums of exact-integer?s
+  ;; for the number of generations in the first arg
   [transpose/iterate (-> natural-number/c
                          Scale?
-                         pitch/c
                          PitchRangeMinMaxPair?
-                         (listof signed-integer/c)
-                         (listof signed-integer/c)
+                         pitch/c
+                         exact-integer?
+                         (listof exact-integer?)
+                         (listof exact-integer?)
                          (listof (listof pitch/c)))]
   ))
 
@@ -101,13 +103,9 @@
 ;; implementation
 (require (only-in racket/provide matching-identifiers-out))
 
-(require (only-in seq iterate))
-
 (require (only-in algorithms scanl))
 
 (require (only-in srfi/1 list-index))
-
-(require binary-class/contract)
 
 (require (only-in "score-syms.rkt" octave-syms octave? octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c))
 
@@ -321,20 +319,20 @@
   (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-min-max-pair)
        (pitch-is-scale-member? scale pitch)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c signed-integer/c maybe-pitch/c)
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c exact-integer? maybe-pitch/c)
 (define (xpose scale pitch-range-min-max-pair pitch interval)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
     (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
   (xpose/internal scale pitch (scale->pitch-range scale) pitch-range-min-max-pair interval))
 
 ;; do *NOT* add a contract for this routine
-;; it gives an error on signed-integer/c for interval that I cannot understand.
+;; it gives an error on exact-integer? for interval that I cannot understand.
 (define (xpose/internal scale pitch pitch-range-min-max-pair interval)
   (let* ([pitch-idx (pitch->index scale pitch)]
          [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
     (pitch-in-range? scale pitch-range-min-max-pair xposed-pitch)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
 (define (transpose/successive scale pitch-range-min-max-pair pitch interval/intervals)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
     (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
@@ -342,7 +340,7 @@
       (map (lambda (interval) (xpose/internal scale pitch pitch-range-min-max-pair interval)) (scanl + interval/intervals))
       (xpose/internal scale pitch pitch-range-min-max-pair interval/intervals)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c signed-integer/c (listof signed-integer/c)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
 (define (transpose/absolute scale pitch-range-min-max-pair pitch interval/intervals)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
     (error 'transpose/absolute "pitch-range-min-max-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
@@ -356,7 +354,7 @@
 ;; - whole-tone scales: (0 . 47)
 ;; - chromatic scales: (0 . 5)]
 (define/contract (scale->max-idx scale)
-  (-> Scale? unsigned-integer/c)
+  (-> Scale? natural-number/c)
   (let ([cnt-pcs  (length (Scale-pitch-classes scale))]
         [cnt-octs (length octave-syms)])
     (sub1 (* cnt-octs cnt-pcs))))
@@ -408,8 +406,14 @@
 ;; - convert pitches into list of indexes for scale for the kernel argument to iter-sum
 ;; - call iter-sum generations kernel intervals for the list of indexes
 ;; - call transpose/absolute on the list of indexes with the first pitch from the kernel as start
-(define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch kernel-intervals init-intervals)
-  (let ([self-sim-indexess (iter-sum generations kernel-intervals init-intervals)])
+;; - answer each generation in its own list
+(define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch offset kernel-intervals init-intervals)
+  (let ([self-sim-indexess (iter-sum generations offset kernel-intervals init-intervals)])
     (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
-
         
+(module+ test
+  (require rackunit)
+  
+  (check-equal?
+   (second (transpose/iterate 3 C-major (scale->PitchRangeMinMaxPair C-major) (cons 'C '0va) 0 '(0 5 2) '(1 2 3)))
+   '((D . 0va) (E . 0va) (F . 0va) (B . 0va) (C . 8va) (D . 8va) (F . 0va) (G . 0va) (A . 0va))))

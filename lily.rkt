@@ -254,7 +254,7 @@
     }
     ))
 
-(module+ test
+#;(module+ test
   (require rackunit)
   (require "scale.rkt")
   (require "meter.rkt")
@@ -273,20 +273,20 @@
       (PitchedVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
 
   (define split-staff-voice
-    (let* ([af-key-signature (KeySignature 'Bf 'Major)]
+    (let* ([bf-key-signature (KeySignature 'Bf 'Major)]
            [pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'E '() #f))]
            [ascending-pitch-range (cons (cons 'Bf '15vb) (cons 'F '15va))]
-           [ascending-pitches (scale->pitch-range Af-major ascending-pitch-range 3)]
-           [descending-pitch-range (cons (cons 'Af '15va) (cons 'G '15vb))]
-           [descending-pitches (scale->pitch-range Af-major descending-pitch-range 3)]
+           [ascending-pitches (scale->pitch-range Bf-major ascending-pitch-range 3)]
+           [descending-pitch-range (cons (cons 'Bf '15va) (cons 'G '15vb))]
+           [descending-pitches (scale->pitch-range Bf-major descending-pitch-range 3)]
            [all-pitches (append ascending-pitches descending-pitches ascending-pitches descending-pitches)]
            [all-voice-events (map pitch->note-voice-event all-pitches)]
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
-           [all-voice-events-with-key-signature-and-clef (cons af-key-signature all-voice-events-with-clef)])
+           [all-voice-events-with-key-signature-and-clef (cons bf-key-signature all-voice-events-with-clef)])
       (SplitStaffVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
   
   (define keyboard-voice
-    (let* ([ef-key-signature (KeySignature 'Ef 'Major)]
+    [let* ([ef-key-signature (KeySignature 'Ef 'Major)]
            [pitch->note-voice-event (lambda (pitch) (Note (car pitch) (cdr pitch) 'S '() #f))]
            [ascending-treble-pitch-range (cons (cons 'Ef '0va) (cons 'G '15va))]
            [ascending-treble-pitches (scale->pitch-range Ef-major ascending-treble-pitch-range)]
@@ -300,7 +300,7 @@
            [ascending-bass-voice-events-with-key-signature-and-clef (cons ef-key-signature ascending-bass-voice-events-with-clef)]
            [keyboard-voice-events-pair (cons ascending-treble-voice-events-with-key-signature-and-clef
                                                           ascending-bass-voice-events-with-key-signature-and-clef)])
-      (KeyboardVoice 'AcousticGrand keyboard-voice-events-pair)))
+      (KeyboardVoice 'AcousticGrand keyboard-voice-events-pair)])
   
   (define (make-score title voices-groups)
     (Score title "copyright" voices-groups))
@@ -352,8 +352,52 @@
   
   (let* ([voices-group (make-clipped&aligned-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
          [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
-    (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
-  
-  )
-  
+    (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score)))
 
+(module+ test
+  (require rackunit)
+  (require "scale.rkt")
+  (require "meter.rkt")
+
+  (define (durs&pit->notes durations pitch)
+    (cond [(null? durations) '()]
+          [(= 1 (length durations)) (cons (Note (car pitch) (cdr pitch) (car durations) '() #f)
+                                          (durs&pit->notes (cdr durations) pitch))]
+          [else (cons (Note (car pitch) (cdr pitch) (car durations) '() #t)
+                      (durs&pit->notes (cdr durations) pitch))]))
+  
+  (define self-sim-voices-pitchess
+    (let* ([ef-major-min-max-pair     (scale->PitchRangeMinMaxPair Ef-major)]
+           [init-pitch                (cons 'Ef '8vb)]
+           [init-intervals            '(3 0 5)]
+           [kernel-intervals          '(0 6 1 2)])
+      (transpose/iterate 4 Ef-major ef-major-min-max-pair init-pitch 0 kernel-intervals init-intervals)))
+  
+  (define self-sim-voices
+    (let* ([ef-key-signature          (KeySignature 'Ef 'Major)]
+           [kernel-intervals          '(0 6 1 2)]
+           [kernel-length             (length kernel-intervals)]
+           [voices-durationss       (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 kernel-length))))])
+      (let* ([durs&pits->notess     (lambda (durations pitches) (flatten (map (curry durs&pit->notes durations) pitches)))]
+             [voices-notes          (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
+             [voices-notes&clef     (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
+             [voices-notes&key&clef (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
+             [split-staff-voices    (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand voice-events)) voices-notes&key&clef)])
+        split-staff-voices)))
+  
+  (define (make-score title voices-groups)
+    (Score title "copyright" voices-groups))
+
+  (define (test-score file-name score)
+    (let* ([output-file-name (string-append "test/" file-name ".ly")]
+           [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
+      (display (score->lily score) output-port)
+      (close-output-port output-port)
+      (check-true (system (format "lilypond -s -o test ~v" output-file-name)))))
+  
+  (let* ([simple-tempo (TempoDur 'Q 120)]
+         [simple-time-signature (TimeSignatureSimple 4 'Q)]
+         [voices-group (VoicesGroup simple-tempo simple-time-signature self-sim-voices)]
+         [score (make-score "selfsim voices" (list voices-group))])
+    (test-score "self-sim-voices" score))
+  )

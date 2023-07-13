@@ -6,7 +6,7 @@
  (contract-out
   ;; rotate list forward or backward for positive
   ;; or negative value e.g. '(1 2 3) 1 -> '(2 3 1)
-  [rotate-list-by (-> list? signed-integer/c list?)]
+  [rotate-list-by (-> list? exact-integer? list?)]
 
   ;; answer a thunk that accumulates successive any/c
   ;; converted into a natural until total is >= target
@@ -17,13 +17,11 @@
   ;; group by sequential values that match a boolean predicate 
   [group-by-adjacent-sequences (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))]))
 
-(require binary-class/contract)
-
 ;; - - - - - - - - -
 ;; implementation
 
 ;; rotate list forward by cnt, e.g. given '(1 2 3) and 1, give '(2 3 1)
-;; [rotate-list-by (-> list? signed-integer/c list?)
+;; [rotate-list-by (-> list? exact-integer? list?)
 (define (rotate-list-by lst cnt)
   (let* ([l (length lst)]
          [c (modulo (abs cnt) l)])

@@ -167,19 +167,44 @@
 ;;       dur = voiceGenDur vgen
 ;;       op = voiceGenOp vgen
 
-;; Racket/Haskell equivalents:
 ;; I *cannot* figure out what contract should look like for iter-fun and iter-sum
-(define (iter-fun off kern)
+(define (iter-fun offset kern)
   (lambda (inits)
     (for*/list ([k kern] [i inits])
-      (+ off k i))))
+      (+ offset k i))))
 
-(define (iter-sum generations kern inits)
-  (->list (take generations (iterate (iter-fun 0 kern) inits))))
+(define (iter-sum generations offset kern inits)
+  (->list (take generations (iterate (iter-fun offset kern) inits))))
 
+;; Racket/Haskell equivalents:
 ;; unfold.rkt> (iter-sum 3 '(1 5 1) '(1 1))
 ;; '((1 1) (2 2 6 6 2 2) (3 3 7 7 3 3 7 7 11 11 7 7 3 3 7 7 3 3))
 ;;
 ; ;ghci> take 3 $ iterate (\abs -> [(k + i) | k <- [1,5,1], i <- abs]) [1,1]
 ;; take 3 $ iterate (\abs -> [(k + i) | k <- [1,5,1], i <- abs]) [1,1]
 ;; [[1,1],[2,2,6,6,2,2],[3,3,7,7,3,3,7,7,11,11,7,7,3,3,7,7,3,3]]
+
+;; lengths of generations:
+;; > (map length (iter-sum 5 0 '(1 5 1) '(1 1)))
+;; '(2 6 18 54 162)
+;; 
+;; note that lengths of generations are:
+;; - length of inits
+;; - length of inits * length of kern
+;; - length of inits * length of kern * length of kern
+;; - length of inits * length of kern * length of kern * length of kern
+;; e.g.
+;; - (1 1)                                   # 2          # 2 * 3^0
+;; - (2 2 6 6 2 2)                           # 2 * 3      # 2 * 3^1
+;; - (3 3 7 7 3 3 7 7 11 11 7 7 3 3 7 7 3 3) # 2 * 3 * 3  # 2 * 3^2
+;; e.g.
+;; (length of inits) * ((length of kern)^(generation - 1))
+;;
+;; so the multipliers in count from generation to generation in '(2 6 18 54 162) are all (* (#prev gen) 3) or 3x
+;; so if you picked the '(2 6 18 54 162) generations to map into equal total durations and you started with
+;; 128th notes for the 162 generation, then next slowest would be a dotted 64th note, then three of those would
+;; be a tied (S HTE) pair, three of those a tied (E. SF.) pair then '(H E HTE) then '(W. Q. SF.) for a series
+;; '(HTE SF. (S HTE) (E. SF.) (H E HTE)) which is pretty ugly, though maybe you'd want to bar it in 9/16 or something?
+;; or maybe for sanity's sake you'd want to take the maximum generation count in 64th notes instead of 128ths, though
+;; you'd probably keep the time signature in some sort of 6/32 or 9/32.
+;; 

@@ -304,13 +304,13 @@
             (let ([new-window '()]
                   [new-return (append current-return current-window (list voice-event))])
               (list current-clef new-window new-return))
-            (let ([new-window (append current-window (list voice-event))])
-              (if (< (voice-events->count-pitches new-window) max-count-window-pitches)
-                  (list current-clef new-window current-return)
-                  (let ([new-clef   (if (symbol=? current-clef 'Bass) 'Treble 'Bass)]
-                        [new-window '()]
-                        [new-return (append current-return current-window)])
-                    (list new-clef new-window new-return))))))
+            (if (< (add1 (voice-events->count-pitches current-window)) max-count-window-pitches)
+                (let ([new-window (append current-window (list voice-event))])
+                  (list current-clef new-window current-return))
+                (let* ([new-clef   (if (symbol=? current-clef 'Bass) 'Treble 'Bass)]
+                       [new-window '()]
+                       [new-return (append (list new-clef) current-return current-window (list voice-event))])
+                  (list new-clef new-window new-return)))))
       (match voice-event
         [(Note pitch-class octave _ _ _)
          (fold-fun-inner pitch-class octave)]
@@ -334,7 +334,7 @@
         [_
          (let ([new-window (append current-window (list voice-event))])
            (list current-clef new-window current-return))])))
-  (let* ([initial-state (list starting-clef (list starting-clef) '())]
+  (let* ([initial-state (list starting-clef '() '())]
          [final-state (foldl fold-fun initial-state voice-events)]
          [final-window (second final-state)]
          [final-return (third final-state)])
