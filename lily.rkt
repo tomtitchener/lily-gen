@@ -254,10 +254,11 @@
     }
     ))
 
-#;(module+ test
+(module+ test
   (require rackunit)
   (require "scale.rkt")
   (require "meter.rkt")
+  (require "score-utils.rkt")
 
   (define pitched-voice
     (let* ([af-key-signature (KeySignature 'Af 'Major)]
@@ -352,9 +353,28 @@
   
   (let* ([voices-group (make-clipped&aligned-simple-voices-group (list pitched-voice keyboard-voice split-staff-voice))]
          [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
-    (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score)))
+    (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
 
-(module+ test
+  (let* ([ef-key-signature         (KeySignature 'Ef 'Major)]
+         [kernel-intervals         '(0 6 1 2)]
+         [kernel-length            (length kernel-intervals)]
+         [voices-durationss        (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 kernel-length))))]
+         [durs&pits->notess        (lambda (durations pitches) (flatten (map (curry ctrls-durs&pit->notes '() durations) pitches)))]
+         [ef-major-min-max-pair    (scale->PitchRangeMinMaxPair Ef-major)]
+         [init-pitch               (cons 'Ef '8vb)]
+         [init-intervals           '(3 0 5)]
+         [self-sim-voices-pitchess (transpose/iterate 4 Ef-major ef-major-min-max-pair init-pitch 0 kernel-intervals init-intervals)]
+         [voices-notes             (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
+         [voices-notes&clef        (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
+         [voices-notes&key&clef    (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
+         [split-staff-voices       (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand voice-events)) voices-notes&key&clef)]
+         [simple-tempo             (TempoDur 'Q 120)]
+         [simple-time-signature    (TimeSignatureSimple 4 'Q)]
+         [voices-group             (VoicesGroup simple-tempo simple-time-signature split-staff-voices)]
+         [score                    (make-score "selfsim voices" (list voices-group))])
+    (test-score "self-sim-voices" score)))
+
+#;(module+ test
   (require rackunit)
   (require "scale.rkt")
   (require "meter.rkt")
@@ -401,3 +421,18 @@
          [score (make-score "selfsim voices" (list voices-group))])
     (test-score "self-sim-voices" score))
   )
+
+;; Next steps:
+;; * squash self-sim subroutines into a single one for unit test, add to previous test module
+;; * make routine for quick turnaround that outputs a self-similar score from args as well:
+;;   - count generations
+;;   - list of generations to extract for making voices
+;;   - input routine to generate list of list of rhythms (including rests) per voice
+;;     using list of pitches per voice, account for relative numbers of pitches per
+;;     voice, which is actually a function of length of kernel and number of generation
+;;     so e.g. per-generation multiplier is length of kernel * difference in generations
+;;   - result should be creating and rendering score with lilypond ready to listen to
+;;
+;; Or maybe before trying to launch into integration of pitch and rhythm, just leave as is
+;; and focus on interaction between kernel and init, also effect of 2x, 3x, 4x, and etc.
+;; kernel lengths and length of inits

@@ -32,6 +32,11 @@
  voice-event/c
  voice/c
  ;; - - - - - - - - -
+ ;; utilities
+ (contract-out
+  ;; extract duration from voice-event, 0 if none
+  [voice-event->duration-int (-> voice-event/c natural-number/c)])
+ ;; - - - - - - - - -
  ;; symbols and predicates
  (all-from-out "score-syms.rkt"))
 
@@ -40,6 +45,8 @@
 (require "score-syms.rkt")
 
 (require (only-in "scale.rkt" pitch->chromatic-index))
+
+(require "lily-utils.rkt")
 
 (define control/c
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
@@ -68,11 +75,46 @@
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
-(struct/contract Tuplet ([num   natural-number/c]
-                         [denom natural-number/c]
-                         [dur   duration?]
-                         [notes (listof tuplet-note/c)])
-                 #:transparent)
+;; * the duration of the tuplet is the dur value
+;;   from the Tuplet struct
+;;   (see voice-event->duration-int)
+;; * there must be no remainder from (/ dur denom)
+;    or perhaps a better measure is that when you
+;;   do (/ (duration->int dur) denom) then there
+;;   should be an integral duration that results
+;;   from (int->durations (/ (duration->int denom)))
+;;   though for error reporting it should really be
+;;   (let ([rem (/ (duration->int denom))])
+;;      (and (integer? rem) (= 1 (length (int->durations rem)))))
+;; * the duration of the events between the brackets
+;;   is equal to the (* num (/ dur denom))
+;; * final point is tuplets should never span a bar,
+;;   see 
+(define/contract (tuplet-ctor-guard num denom dur notes type-name)
+  (-> natural-number/c natural-number/c duration? (listof tuplet-note/c) symbol? (values natural-number/c natural-number/c duration? (listof tuplet-note/c)))
+  (cond
+    [(= num denom)
+     (error type-name "Tuplet with num ~v = denom ~v" num denom)]
+    [else
+     (let ([unit-dur  (/ (duration->int dur) denom)]
+           [notes-dur (apply + (map voice-event->duration-int notes))])
+       (cond
+         [(not (integer? unit-dur))
+          (error type-name
+                 "Tuplet with non-integral unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v"
+                 dur (duration->int dur) denom unit-dur)]
+         [(not (= 1 (length (int->durations unit-dur))))
+          (error type-name
+                 "Tuplet unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v is not an integral duration ~v"
+                 dur (duration->int dur) denom unit-dur (int->durations unit-dur))]
+         [(not (= notes-dur (* num unit-dur)))
+          (error type-name
+                 "Tuplet notes: ~v with total duration: ~v instead of (* num: ~v unit-dur: ~v): ~v"
+                 notes notes-dur (* num unit-dur) num unit-dur)]
+         [else
+          (values num denom dur notes)]))]))
+
+(struct Tuplet (num denom dur notes) #:guard tuplet-ctor-guard #:transparent)
 
 (struct/contract TempoDur ([dur   duration?]
                            [perMin natural-number/c])
@@ -118,6 +160,17 @@
 
 (define voice-event/c
   (make-flat-contract #:name 'voice-event/c #:first-order (or/c Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
+
+;; (-> voice-event/c natural-number/c)
+(define (voice-event->duration-int voice-event)
+  (match voice-event
+    [(Note _ _ dur _ _) (duration->int dur)]
+    [(Rest dur)         (duration->int dur)]
+    [(Spacer dur)       (duration->int dur)]
+    [(Chord _ dur _ _)  (duration->int dur)]
+    [(Tuplet _ _ dur _) (duration->int dur)]
+    [(KeySignature _ _) 0]
+    [(? clef?)          0]))
 
 (struct/contract PitchedVoice ([instr       instr?]
                                [voiceevents (listof voice-event/c)])

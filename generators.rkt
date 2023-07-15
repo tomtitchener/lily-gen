@@ -75,7 +75,7 @@
 (module+ test
   (require rackunit)
   (require (only-in "utils.rkt" sum<=?))
-  (require (only-in "score-utils.rkt" voice-event->duration-int))
+  (require (only-in "score.rkt" voice-event->duration-int))
   (let* ([pitch-or-f-gen  (sequence->repeated-generator (list (cons 'C '0va) #f (cons 'E '0va)))]
          [duration-gen    (sequence->repeated-generator '(E S S E S S))]
          [accent-or-f-gen (sequence->repeated-generator '(Accent #f #f))]
