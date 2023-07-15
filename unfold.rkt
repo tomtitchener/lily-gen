@@ -16,7 +16,7 @@
 
 (require relation/type)
 
-(provide iter-sum)
+(provide iterate-list-comprehension-sum)
 
 ;; srfi-1
 ;; unfold p f g [tail-gen] -> list
@@ -168,13 +168,13 @@
 ;;       op = voiceGenOp vgen
 
 ;; I *cannot* figure out what contract should look like for iter-fun and iter-sum
-(define (iter-fun offset kern)
+(define (list-comprehension-sum offset kern)
   (lambda (inits)
     (for*/list ([k kern] [i inits])
       (+ offset k i))))
 
-(define (iter-sum generations offset kern inits)
-  (->list (take generations (iterate (iter-fun offset kern) inits))))
+(define (iterate-list-comprehension-sum generations offset kern inits)
+  (->list (take generations (iterate (list-comprehension-sum offset kern) inits))))
 
 ;; Racket/Haskell equivalents:
 ;; unfold.rkt> (iter-sum 3 '(1 5 1) '(1 1))

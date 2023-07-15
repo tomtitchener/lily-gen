@@ -75,23 +75,17 @@
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
-;; * the duration of the tuplet is the dur value
-;;   from the Tuplet struct
+;; * the duration of the tuplet is the dur value from the Tuplet struct
 ;;   (see voice-event->duration-int)
-;; * there must be no remainder from (/ dur denom)
-;    or perhaps a better measure is that when you
-;;   do (/ (duration->int dur) denom) then there
-;;   should be an integral duration that results
-;;   from (int->durations (/ (duration->int denom)))
-;;   though for error reporting it should really be
-;;   (let ([rem (/ (duration->int denom))])
-;;      (and (integer? rem) (= 1 (length (int->durations rem)))))
-;; * the duration of the events between the brackets
-;;   is equal to the (* num (/ dur denom))
-;; * final point is tuplets should never span a bar,
-;;   see 
+;; * there must be no remainder from (/ dur denom) or perhaps a better measure
+;;   is that when you do (/ (duration->int dur) denom) then there should be an
+;;   integral duration from (int->durations (/ (duration->int denom)))
+;; * the duration of the events between the brackets is (* num (/ dur denom))
 (define/contract (tuplet-ctor-guard num denom dur notes type-name)
-  (-> natural-number/c natural-number/c duration? (listof tuplet-note/c) symbol? (values natural-number/c natural-number/c duration? (listof tuplet-note/c)))
+  (-> natural-number/c
+      natural-number/c
+      duration?
+      (listof tuplet-note/c) symbol? (values natural-number/c natural-number/c duration? (listof tuplet-note/c)))
   (cond
     [(= num denom)
      (error type-name "Tuplet with num ~v = denom ~v" num denom)]

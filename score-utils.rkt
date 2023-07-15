@@ -82,6 +82,7 @@
          (cons (Chord pitches (car durations) ctrls #t)
                (ctrls-durs&pits->chords ctrls (cdr durations) pitches))]))
 
+;; (-> (listof voice-event/c) clef? (listof voice-event/c))
 (define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)
   (define max-count-window-pitches 5)
   (define (max-note-for-clef clef) (if (symbol=? 'Bass clef) (cons 'F '0va) (cons 'G '8vb)))

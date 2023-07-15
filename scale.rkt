@@ -111,7 +111,7 @@
 
 (require (only-in "utils.rkt" rotate-list-by))
 
-(require (only-in "unfold.rkt" iter-sum))
+(require (only-in "unfold.rkt" iterate-list-comprehension-sum))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -408,7 +408,7 @@
 ;; - call transpose/absolute on the list of indexes with the first pitch from the kernel as start
 ;; - answer each generation in its own list
 (define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch offset kernel-intervals init-intervals)
-  (let ([self-sim-indexess (iter-sum generations offset kernel-intervals init-intervals)])
+  (let ([self-sim-indexess (iterate-list-comprehension-sum generations offset kernel-intervals init-intervals)])
     (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
         
 (module+ test

@@ -374,56 +374,7 @@
          [score                    (make-score "selfsim voices" (list voices-group))])
     (test-score "self-sim-voices" score)))
 
-#;(module+ test
-  (require rackunit)
-  (require "scale.rkt")
-  (require "meter.rkt")
-
-  (define (durs&pit->notes durations pitch)
-    (cond [(null? durations) '()]
-          [(= 1 (length durations)) (cons (Note (car pitch) (cdr pitch) (car durations) '() #f)
-                                          (durs&pit->notes (cdr durations) pitch))]
-          [else (cons (Note (car pitch) (cdr pitch) (car durations) '() #t)
-                      (durs&pit->notes (cdr durations) pitch))]))
-  
-  (define self-sim-voices-pitchess
-    (let* ([ef-major-min-max-pair     (scale->PitchRangeMinMaxPair Ef-major)]
-           [init-pitch                (cons 'Ef '8vb)]
-           [init-intervals            '(3 0 5)]
-           [kernel-intervals          '(0 6 1 2)])
-      (transpose/iterate 4 Ef-major ef-major-min-max-pair init-pitch 0 kernel-intervals init-intervals)))
-  
-  (define self-sim-voices
-    (let* ([ef-key-signature          (KeySignature 'Ef 'Major)]
-           [kernel-intervals          '(0 6 1 2)]
-           [kernel-length             (length kernel-intervals)]
-           [voices-durationss       (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 kernel-length))))])
-      (let* ([durs&pits->notess     (lambda (durations pitches) (flatten (map (curry durs&pit->notes durations) pitches)))]
-             [voices-notes          (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
-             [voices-notes&clef     (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
-             [voices-notes&key&clef (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
-             [split-staff-voices    (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand voice-events)) voices-notes&key&clef)])
-        split-staff-voices)))
-  
-  (define (make-score title voices-groups)
-    (Score title "copyright" voices-groups))
-
-  (define (test-score file-name score)
-    (let* ([output-file-name (string-append "test/" file-name ".ly")]
-           [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
-      (display (score->lily score) output-port)
-      (close-output-port output-port)
-      (check-true (system (format "lilypond -s -o test ~v" output-file-name)))))
-  
-  (let* ([simple-tempo (TempoDur 'Q 120)]
-         [simple-time-signature (TimeSignatureSimple 4 'Q)]
-         [voices-group (VoicesGroup simple-tempo simple-time-signature self-sim-voices)]
-         [score (make-score "selfsim voices" (list voices-group))])
-    (test-score "self-sim-voices" score))
-  )
-
 ;; Next steps:
-;; * squash self-sim subroutines into a single one for unit test, add to previous test module
 ;; * make routine for quick turnaround that outputs a self-similar score from args as well:
 ;;   - count generations
 ;;   - list of generations to extract for making voices

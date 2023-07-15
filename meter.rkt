@@ -100,9 +100,21 @@
           [else (error 'add-end-durs-for-num&denom "beatLen: ~v barLen: ~v remBeat: ~v remBar: ~v cur: ~v add: ~v acc: ~v"
                        beatLen barLen remBeat remBar cur add acc)])))))
 
+;; tell position in bar as pair of:
+;; - distance from beginning of bar
+;; - distance to end of bar
+;; (see beginning of add-durs-for-time-signature)
+(define/contract (bar-position-for-time-signature time-signature tot-curlen)
+  (-> time-signature/c natural-number/c (cons/c natural-number/c natural-number/c))
+  (let* ([num-denom-gen (time-signature->num-denom-generator time-signature)]
+         [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]
+         [num-denom-pr  (num-denom-gen)]
+         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)])
+    (cons spill-len rem-bar)))
+
 ;; given time-signature, duration total so far (tot-curlen) and duration total to add (tot-addlen)
 ;; answer list of durations that fill tot-addlen with respect to the current beat and bar length
-;; 1) convert the meter or meters in timesig to a cycle of num denom pairs for simple time sigs
+;; 1) convert the meter or meters in time-signature to a cycle of num denom pairs for simple time sigs
 ;; 2) advance cycle past tot-curlen to current bar, answer dur len from start of current bar
 ;;   (spill-len, may be 0)
 ;; 3) compute durlen from spill-len to end of first bar (rem-bar)
@@ -110,9 +122,9 @@
 ;; 5) compute list of durs for first bar given spillover as curlen, initial addlen (init-durs)
 ;; 6) compute list of list of dur lens for successive bars given remaining addlen bar by
 ;;    bar until remaining addlen goes to zero (succ-durs)
-(define/contract (add-end-durs-for-time-signature timesig tot-curlen tot-addlen)
+(define/contract (add-end-durs-for-time-signature time-signature tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
-  (let* ([num-denom-gen (time-signature->num-denom-generator timesig)]                    ;; 1
+  (let* ([num-denom-gen (time-signature->num-denom-generator time-signature)]             ;; 1
          [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]        ;; 2
          [num-denom-pr  (num-denom-gen)]
          [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)]                ;; 3
@@ -333,10 +345,19 @@
                 [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
                 [notes-or-chords (ctrls-durs&pits->chords ctrls durs pitches)])
            (cons (+ curlen addlen) (append ves notes-or-chords)))]
-        ;; TBD: special handling for Tuplet, which must not traverse a bar, can I
-        ;; tell that's happening here?
-        [(or (Spacer _) (Tuplet _ _ _ _) (KeySignature _ _) (? clef?))
-         ;; Tuplet, Spacer: treat integrally with durs unchanged
+        [(Tuplet _ _ dur _)
+         ;; make sure end of tuplet is before the end of the bar
+         ;; may want to allow this as Lilypond handles cross-bar
+         ;; tuplets
+         (let ([tuplet-durlen (duration->int dur)]
+               [rem-durlen (cdr (bar-position-for-time-signature time-signature curlen))])
+           (if (> tuplet-durlen rem-durlen)
+               (error 'align-voice-events-durations
+                      "tuplet ~v durlen ~v > durlen to end of bar ~v"
+                      voice-event tuplet-durlen rem-durlen)
+               (cons (+ curlen tuplet-durlen) (list voice-event))))]
+        [(or (Spacer _) (KeySignature _ _) (? clef?))
+         ;; Spacer: treat integrally with durs unchanged
          ;; KeySignature, clef: zero-dur from voice-event->duration-int
          (let ([addlen (voice-event->duration-int voice-event)])
            (cons (+ curlen addlen) (list voice-event)))])
