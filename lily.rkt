@@ -355,15 +355,16 @@
          [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
     (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
 
-  (let* ([ef-key-signature         (KeySignature 'Ef 'Major)]
+  (let* ([gens                     4]
+         [ef-key-signature         (KeySignature 'Ef 'Major)]
          [kernel-intervals         '(0 6 1 2)]
          [kernel-length            (length kernel-intervals)]
-         [voices-durationss        (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 kernel-length))))]
+         [voices-durationss        (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 gens))))]
          [durs&pits->notess        (lambda (durations pitches) (flatten (map (curry ctrls-durs&pit->notes '() durations) pitches)))]
          [ef-major-min-max-pair    (scale->PitchRangeMinMaxPair Ef-major)]
          [init-pitch               (cons 'Ef '8vb)]
          [init-intervals           '(3 0 5)]
-         [self-sim-voices-pitchess (transpose/iterate 4 Ef-major ef-major-min-max-pair init-pitch 0 kernel-intervals init-intervals)]
+         [self-sim-voices-pitchess (transpose/iterate gens Ef-major ef-major-min-max-pair init-pitch 0 kernel-intervals init-intervals)]
          [voices-notes             (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
          [voices-notes&clef        (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
          [voices-notes&key&clef    (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
@@ -375,7 +376,7 @@
     (test-score "self-sim-voices" score)))
 
 ;; Next steps:
-;; * make routine for quick turnaround that outputs a self-similar score from args as well:
+;; * make routine for quick turnaround that outputs a self-similar score from args:
 ;;   - count generations
 ;;   - list of generations to extract for making voices
 ;;   - input routine to generate list of list of rhythms (including rests) per voice
@@ -387,3 +388,11 @@
 ;; Or maybe before trying to launch into integration of pitch and rhythm, just leave as is
 ;; and focus on interaction between kernel and init, also effect of 2x, 3x, 4x, and etc.
 ;; kernel lengths and length of inits
+;;
+;; Leverage parameters:  create parameters for key-signature, min-max-pair, kernel, inits,
+;; tempo, time-signature, title, start pitch, list of generations to extract for voices, ...
+;; Create a no-argument routine that initializes values from the parameters
+;; and which produces e.g. a score I can pass to another routine to call
+;; lilypond and answer if it succeeded or failed.
+;;
+;; Then explore interactively starting from very simple values for the kernel and inits lists.

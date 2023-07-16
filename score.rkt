@@ -35,7 +35,10 @@
  ;; utilities
  (contract-out
   ;; extract duration from voice-event, 0 if none
-  [voice-event->duration-int (-> voice-event/c natural-number/c)])
+  [voice-event->duration-int (-> voice-event/c natural-number/c)]
+
+  [scale->KeySignature (-> Scale? KeySignature?)])
+ 
  ;; - - - - - - - - -
  ;; symbols and predicates
  (all-from-out "score-syms.rkt"))
@@ -44,7 +47,7 @@
 ;; implementation
 (require "score-syms.rkt")
 
-(require (only-in "scale.rkt" pitch->chromatic-index))
+(require (only-in "scale.rkt" Scale? pitch->chromatic-index scale->key-signature-values))
 
 (require "lily-utils.rkt")
 
@@ -133,6 +136,10 @@
 (struct/contract KeySignature ([pitch pitch-class?]
                                [mode  mode?])
                  #:transparent)
+
+(define (scale->KeySignature scale)
+  (let-values ([(tonic mode) (scale->key-signature-values scale)])
+    (KeySignature tonic mode)))
 
 (struct/contract TimeSignatureSimple ([num   natural-number/c]
                                       [denom duration?])

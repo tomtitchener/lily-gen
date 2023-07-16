@@ -38,6 +38,8 @@
  ;; - - - - - - - - -
  ;; Utilities
  (contract-out
+  [scale->key-signature-values  (-> Scale? (values pitch-class? mode?))]
+  
   [pitch->chromatic-index (-> pitch/c natural-number/c)]
     
   ;; what is the index in c-ordered-enharmonic-pitch-class-symss for pitch-class?
@@ -107,7 +109,7 @@
 
 (require (only-in srfi/1 list-index))
 
-(require (only-in "score-syms.rkt" octave-syms octave? octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c))
+(require (only-in "score-syms.rkt" octave-syms octave? octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c mode?))
 
 (require (only-in "utils.rkt" rotate-list-by))
 
@@ -263,6 +265,27 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
+(define/contract (scale->fifths-ordering scale)
+  (-> Scale? Scale?)
+  (Scale (sort (Scale-pitch-classes scale) < #:key fifths-ordered-pitch-class-index)))
+
+;; (-> Scale? (values pitch-class? mode?))
+(define (scale->key-signature-values scale)
+  (when (and (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes (scale->c-ordering scale)))
+             (not (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes C-major))))
+    (error 'scale->key-signature-values "scale ~v is in c-ordering" scale))
+  (let* ([tonic (car (Scale-pitch-classes scale))]
+         [fifths-ordered-scale (scale->fifths-ordering scale)]
+         [fifths-ordered-scale-pitches (Scale-pitch-classes fifths-ordered-scale)])
+    (let ([mode
+           (cond
+             [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 1)) 'Major]
+             [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 4)) 'Minor]
+             [else (error 'scale->key-signature-values
+                          "cannot find tonic ~v in fifths-ordering ~v of scale ~v"
+                          tonic fifths-ordered-scale scale)])])
+      (values tonic mode))))
+      
 (define (index->pitch scale idx)
   (when (> idx (scale->max-idx scale))
     (error 'index->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
@@ -407,6 +430,13 @@
 ;; - call iter-sum generations kernel intervals for the list of indexes
 ;; - call transpose/absolute on the list of indexes with the first pitch from the kernel as start
 ;; - answer each generation in its own list
+;;(-> natural-number/c
+;;    Scale?
+;;    PitchRangeMinMaxPair?
+;;    pitch/c exact-integer?
+;;    (listof exact-integer?)
+;;    (listof exact-integer?)
+;;    (listof (listof pitch/c)))
 (define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch offset kernel-intervals init-intervals)
   (let ([self-sim-indexess (iterate-list-comprehension-sum generations offset kernel-intervals init-intervals)])
     (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
