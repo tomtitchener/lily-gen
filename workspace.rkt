@@ -69,17 +69,18 @@
   (-> (listof duration?) (listof pitch/c) (listof Note?))
   (flatten (map (curry ctrls-durs&pit->notes '() durations) pitches)))
 
+;; deprecated with choice of SplitStaff voice
 (define/contract (add-clefs clef voice-events)
   (-> clef? (listof voice-event/c) (listof voice-event/c))
   (add-bass-or-treble-clefs-to-voice-events voice-events clef))
 
-(define/contract (add-key-signature key-signature voice-events)
-  (-> KeySignature? (listof voice-event/c) (listof voice-event/c))
-  (cons key-signature voice-events))
+(define/contract (add-key-signature voice-events)
+  (-> (listof voice-event/c) (listof voice-event/c))
+  (cons (key-signature-param) voice-events))
 
 (define/contract (add-clefs&key-signature voice-events)
   (-> (listof voice-event/c) (listof voice-event/c))
-    (add-clefs 'Treble (add-key-signature (key-signature-param) voice-events)))
+    (add-clefs 'Treble (add-key-signature voice-events)))
 
 (define/contract simple-iterated-voices/parameterized
   (-> (listof voice/c))
@@ -87,7 +88,7 @@
    (let* ([simple-pitchess   (transpose/iterate/parameterized)]
           [simple-durationss (simple-voices-durations/parameterized)]
           [notess            (map durs&pits->notes simple-durationss simple-pitchess)]
-          [voice-eventss     (map add-clefs&key-signature notess)])
+          [voice-eventss     (map add-key-signature notess)])
      (map (curry SplitStaffVoice (instr-param)) voice-eventss))))
 
 (define/contract (voices-group/parameterized voices)
@@ -105,11 +106,13 @@
           [voices-group (voices-group/parameterized voices)])
      (score/parameterized (list voices-group)))))
 
-(define/contract (gen-score-file/parameterized score)
-  (-> Score? boolean?)
-  (let* ([output-file-name (string-append "test/" (file-name-param) ".ly")]
-         [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
-    (display (score->lily score) output-port)
-    (close-output-port output-port)
-    (system (format "lilypond -s -o test ~v" output-file-name))))
+(define/contract gen-score-file/parameterized
+  (-> boolean?)
+  (thunk
+   (let* ([output-file-name (string-append "test/" (file-name-param) ".ly")]
+          [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)]
+          [score (simple-iterated-score/parameterized)])
+     (display (score->lily score) output-port)
+     (close-output-port output-port)
+     (system (format "lilypond -s -o test ~v" output-file-name)))))
 
