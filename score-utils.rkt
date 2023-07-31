@@ -113,7 +113,7 @@
                   (list current-clef new-window current-return))
                 (let* ([new-clef   (if (symbol=? current-clef 'Bass) 'Treble 'Bass)]
                        [new-window '()]
-                       [new-return (append (list new-clef) current-return current-window (list voice-event))])
+                       [new-return (append current-return current-window (list new-clef) (list voice-event))])
                   (list new-clef new-window new-return)))))
       (match voice-event
         [(Note pitch-class octave _ _ _)

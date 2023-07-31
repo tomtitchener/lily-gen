@@ -89,8 +89,9 @@
   ;; - if additional natural-number/c then in steps by value (default 1)
   [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]
 
-  ;; iterate transposition of list of pitches by list of list-comprehension over sums of exact-integer?s
-  ;; for the number of generations in the first arg
+  ;; iterate transposition of list of pitches by list of list-comprehension over sums of list of exact-integer?
+  ;; for the number of generations in the first arg,
+  ;; answer generations each in its own list
   [transpose/iterate (-> natural-number/c
                          Scale?
                          PitchRangeMinMaxPair?
@@ -348,9 +349,10 @@
     (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
   (xpose/internal scale pitch (scale->pitch-range scale) pitch-range-min-max-pair interval))
 
-;; do *NOT* add a contract for this routine
-;; it gives an error on exact-integer? for interval that I cannot understand.
-(define (xpose/internal scale pitch pitch-range-min-max-pair interval)
+;; pitch and pitch-range-min-max-pair already guarded, so
+;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
+(define/contract (xpose/internal scale pitch pitch-range-min-max-pair interval)
+  (-> Scale? pitch/c PitchRangeMinMaxPair? exact-integer? maybe-pitch/c)
   (let* ([pitch-idx (pitch->index scale pitch)]
          [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
     (pitch-in-range? scale pitch-range-min-max-pair xposed-pitch)))
@@ -426,10 +428,6 @@
             (list C-major chromatic-sharps chromatic-flats A-minor A-major)))
 
 
-;; - convert pitches into list of indexes for scale for the kernel argument to iter-sum
-;; - call iter-sum generations kernel intervals for the list of indexes
-;; - call transpose/absolute on the list of indexes with the first pitch from the kernel as start
-;; - answer each generation in its own list
 ;;(-> natural-number/c
 ;;    Scale?
 ;;    PitchRangeMinMaxPair?
