@@ -4,6 +4,9 @@
 
 ;; nothing to provide, this is a stub
 
+(require (only-in seq iterate take))
+(require relation/type)
+
 (require "score.rkt")
 (require "score-utils.rkt")
 (require "scale.rkt")
@@ -18,9 +21,9 @@
 
 (define scale-param (make-parameter C-major))
 
-(define key-signature-param (thunk (scale->KeySignature (scale-param))))
+(define key-signature (thunk (scale->KeySignature (scale-param))))
 
-(define scale-range-min-max-pair (thunk (scale->PitchRangeMinMaxPair (scale-param))))
+(define scale-range-min-max-pair-param (thunk (scale->PitchRangeMinMaxPair (scale-param))))
 
 (define start-pitch-param (make-parameter (cons 'C '0va)))
 
@@ -36,11 +39,19 @@
 
 (define tempo-param (make-parameter (TempoDur 'Q 60)))
 
-(define time-signature-param (make-parameter (TimeSignatureSimple 4 'Q)))
+;; override when (length (kernel-param)) is 3, 5, etc, to unit or multiples
+(define beats-per-bar-param (make-parameter 4))
+
+;; when (length (kernel-param)) is 3, 5, etc, make this 'SF or multiples of 'SF
+(define duration-per-beat-param (make-parameter 'Q))
+
+(define time-signature (thunk (TimeSignatureSimple (beats-per-bar-param) (duration-per-beat-param))))
 
 (define score-title-param (make-parameter "workspace"))
 
 (define score-copyright-param (make-parameter "copyright"))
+
+(define shortest-dur-param (make-parameter 'SF))
 
 ;; wrap this with a let setting overrides to the default param vals above
 (define/contract transpose/iterate/parameterized
@@ -48,7 +59,7 @@
   (thunk
    (transpose/iterate (gens-param)
                       (scale-param)
-                      (scale-range-min-max-pair)
+                      (scale-range-min-max-pair-param)
                       (start-pitch-param)
                       (offset-param)
                       (kernel-param)
@@ -62,12 +73,21 @@
 (define/contract simple-voices-durations/parameterized
   (-> (listof (listof duration?)))
   (thunk
-   (let ([kernel-length (length (kernel-param))])
-     (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 (gens-param))))))))
+   (let ([shortest-dur  (duration->int (shortest-dur-param))]
+         [kernel-length (length (kernel-param))])
+     (map int->durations (reverse (->list (take (gens-param) (iterate (curry * kernel-length) shortest-dur))))))))
 
-(define/contract (durs&pits->notes durations pitches)
-  (-> (listof duration?) (listof pitch/c) (listof Note?))
-  (flatten (map (curry ctrls-durs&pit->notes '() durations) pitches)))
+(define/contract (durs&mpit->notes-or-rests durs mpitch)
+  (-> (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))
+  (match mpitch
+    [(cons _ _)
+     (ctrls-durs&pit->notes '() durs mpitch)]
+     [#f
+      (map Rest durs)]))
+
+(define/contract (durs&pits->notes-or-rests durations mpitches)
+  (-> (listof duration?) (listof maybe-pitch/c) (listof (or/c Note? Rest?)))
+  (flatten (map (curry durs&mpit->notes-or-rests durations) mpitches)))
 
 ;; deprecated with choice of SplitStaff voice
 (define/contract (add-clefs clef voice-events)
@@ -76,7 +96,7 @@
 
 (define/contract (add-key-signature voice-events)
   (-> (listof voice-event/c) (listof voice-event/c))
-  (cons (key-signature-param) voice-events))
+  (cons (key-signature) voice-events))
 
 (define/contract (add-clefs&key-signature voice-events)
   (-> (listof voice-event/c) (listof voice-event/c))
@@ -85,15 +105,15 @@
 (define/contract simple-iterated-voices/parameterized
   (-> (listof voice/c))
   (thunk
-   (let* ([simple-pitchess   (transpose/iterate/parameterized)]
+   (let* ([simple-mpitchess  (transpose/iterate/parameterized)]
           [simple-durationss (simple-voices-durations/parameterized)]
-          [notess            (map durs&pits->notes simple-durationss simple-pitchess)]
-          [voice-eventss     (map add-key-signature notess)])
+          [notes-or-restss   (map durs&pits->notes-or-rests simple-durationss simple-mpitchess)]
+          [voice-eventss     (map add-key-signature notes-or-restss)])
      (map (curry SplitStaffVoice (instr-param)) voice-eventss))))
 
 (define/contract (voices-group/parameterized voices)
   (-> (listof voice/c) VoicesGroup?)
-  (VoicesGroup (tempo-param) (time-signature-param) voices))
+  (VoicesGroup (tempo-param) (time-signature) voices))
 
 (define/contract (score/parameterized voices-groups)
   (-> (listof VoicesGroup?) Score?)
@@ -115,4 +135,78 @@
      (display (score->lily score) output-port)
      (close-output-port output-port)
      (system (format "lilypond -s -o test ~v" output-file-name)))))
+
+;; Understanding transpose/iterate:  here's the reference kernel and inits.
+
+;; (parameterize ((gens-param 4) (kernel-param '(3 2 1 -3)) (inits-param '(0 2 4 -1 -3 2))) (gen-score-file/parameterized))
+
+;; Length of kernel tells multiplier by (* num notes) per generation, where the unit at generation 0
+;; is inits num notes so e.g. for kernel of 4 notes and inits of 6 notes, the counts goes 6 24 96 384
+;; or 6 * 4^0, 6 * 4^1, 6 * 4^2, 6 * 4^3
+;; Overlap voice to voice is faster and faster, generation by generation, but between two voices,
+;; with 4x duration shifts per voice, a kernel of 4 notes and an inits of notes, the faster voice
+;; ends half-way through the second note of the slower voice e.g. for half notes and eighth notes,
+;; 1       2       3       4       5       6       
+;; 1 1 1 1 1 1 2 2 2 2 2 2 3 3 3 3 3 3 4 4 4 4 4 4
+;; shows the four repetitions of 6 in the faster voice for one repetition of 6 in the slower voice
+
+;; (parameterize ((gens-param 4) (kernel-param '(3 2 1 -3)) (inits-param '(0 2 4 -1 -3 2))) (gen-score-file/parameterized))
+
+;; generation 0 is just inits relative to starting pitch (default <C 0va>) so C,0va E,0va G 0va, B 1vb, G 1vb, B 1vb)
+;; and that's always layed out as the top voice
+
+;; note that kernel is never heard verbatim, only as the cross product with inits:
+;; unfold.rkt> (iterate-list-comprehension-sum 2 0 '(3 2 1 -3) '(0 2 4 -1 -3 2) )
+;; '((0 2 4 -1 -3 2) (3 5 7 2 0 5 2 4 6 1 -1 4 1 3 5 0 -2 3 -3 -1 1 -4 -6 -1))
+;;   ^            ^   ^           ^            ^             ^
+;;   | kernel ....|   | inits ... |........... |............ 
+
+;; one tricky bit to keep in mind is tranpositions are zero based, so 0 == unison, 1 == second, 2 == third, 3 == fourth, etc.
+
+;; third generation:
+;; '(6  8 10  5  3  8
+;;   5  7  9  4  2  7
+;;   4  6  8  3  1  6
+;;   0  2  4 -1 -3  2
+
+;;   5  7  9  4  2  7
+;;   4  6  8  3  1  6
+;;   3  5  7  2  0  5
+;;  -1  1  3 -2 -4  1
+
+;;   4  6  8  3  1  6
+;;   3  5  7  2  0  5
+;;   2  4  6  1 -1  4
+;;  -2  0  2 -3 -5  0
+;;                     <- this is the confusing join because the whole shifts down so fast,
+;;   0  2  4 -1 -3  2     with repetition of two pitches (0 0) which almost never happens
+;;  -1  1  3 -2 -4  1
+;;  -2  0  2 -3 -5  0
+;;  -6 -4 -2 -7 -9 -4)
+
+;; All this to explore the basic means of operation, which produce nice, recursive patterns at
+;; successive generations that, when played together in sync where the multiplier from generation
+;; to generation from the kernel (e.g. with a kernel of N pitches, the length of each generation:
+;;   (*  (length kernel) (length currnet generation))
+;; mirrored in the difference in durations (... half, eighth, thirty-second)
+
+;; So once you get to a kernel of 4, you're looking at a pretty big jump in the
+;; durations for the voices:  (32nd:8th, 8th:2, 2:1+1 ...), at least given the way 
+;; my duration generator currently works.  The advantage being that all the voices
+;; have the same length and that all voices start at the beginning of the cycle and
+;; end after the last note in the cycle.  Which means once you get past three or
+;; maybe four voices, the earlier generations move extremely slowly. 
+
+;; Which doesn't have to remain that way, except it would mean figuring out a ratio
+;; that got you close to the same ideal but with different counts of repetitions for
+;; the faster voices.
+
+;; Explore:
+;; 1) short inits 4/5 notes
+;; 2) kernels that start with small intervals; 1, 2 (second, third), 
+;; 3) whole-tone scale
+;;
+;; (parameterize ((gens-param 4) (scale-param C-whole-tone) (kernel-param '(0 2 1 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
+;; (parameterize ((gens-param 5) (scale-param C-whole-tone) (kernel-param '(2 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
+;; lessons:  keep kernel param count to multiple of 2 otherwise rhythms go crazy (fix this)
 

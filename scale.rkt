@@ -99,7 +99,7 @@
                          exact-integer?
                          (listof exact-integer?)
                          (listof exact-integer?)
-                         (listof (listof pitch/c)))]
+                         (listof (listof maybe-pitch/c)))]
   ))
 
 ;; - - - - - - - - -
@@ -270,22 +270,27 @@
   (-> Scale? Scale?)
   (Scale (sort (Scale-pitch-classes scale) < #:key fifths-ordered-pitch-class-index)))
 
+;; special-cases for chromatic and whole-tone scales:  neutral key signature, no flats, no sharps
 ;; (-> Scale? (values pitch-class? mode?))
 (define (scale->key-signature-values scale)
-  (when (and (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes (scale->c-ordering scale)))
-             (not (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes C-major))))
-    (error 'scale->key-signature-values "scale ~v is in c-ordering" scale))
-  (let* ([tonic (car (Scale-pitch-classes scale))]
-         [fifths-ordered-scale (scale->fifths-ordering scale)]
-         [fifths-ordered-scale-pitches (Scale-pitch-classes fifths-ordered-scale)])
-    (let ([mode
-           (cond
-             [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 1)) 'Major]
-             [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 4)) 'Minor]
-             [else (error 'scale->key-signature-values
-                          "cannot find tonic ~v in fifths-ordering ~v of scale ~v"
-                          tonic fifths-ordered-scale scale)])])
-      (values tonic mode))))
+  (cond
+    [(or (equal? scale C-whole-tone) (equal? scale Df-whole-tone) (equal? scale chromatic-sharps) (equal? scale chromatic-flats))
+     (values 'C 'Major)]
+    [else
+     (when (and (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes (scale->c-ordering scale)))
+                (not (andmap symbol=? (Scale-pitch-classes scale) (Scale-pitch-classes C-major))))
+       (error 'scale->key-signature-values "scale ~v is in c-ordering" scale))
+     (let* ([tonic (car (Scale-pitch-classes scale))]
+            [fifths-ordered-scale (scale->fifths-ordering scale)]
+            [fifths-ordered-scale-pitches (Scale-pitch-classes fifths-ordered-scale)])
+       (let ([mode
+                 (cond
+                   [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 1)) 'Major]
+                   [(symbol=? tonic (list-ref fifths-ordered-scale-pitches 4)) 'Minor]
+                   [else (error 'scale->key-signature-values
+                                "cannot find tonic ~v in fifths-ordering ~v of scale ~v"
+                                tonic fifths-ordered-scale scale)])])
+         (values tonic mode)))]))
       
 (define (index->pitch scale idx)
   (when (> idx (scale->max-idx scale))
@@ -428,13 +433,14 @@
             (list C-major chromatic-sharps chromatic-flats A-minor A-major)))
 
 
+;; Returned (listof (listof maybe-pitch/c)) is by generation (0 1 2 ..)
 ;;(-> natural-number/c
 ;;    Scale?
 ;;    PitchRangeMinMaxPair?
 ;;    pitch/c exact-integer?
 ;;    (listof exact-integer?)
 ;;    (listof exact-integer?)
-;;    (listof (listof pitch/c)))
+;;    (listof (listof maybe-pitch/c)))
 (define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch offset kernel-intervals init-intervals)
   (let ([self-sim-indexess (iterate-list-comprehension-sum generations offset kernel-intervals init-intervals)])
     (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
