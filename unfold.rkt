@@ -14,9 +14,14 @@
 
 (require (only-in seq iterate take))
 
-(require relation/type)
-
-(provide iterate-list-comprehension-sum)
+(provide
+ (contract-out
+  [iterate-list-comprehension-sum
+   (-> exact-integer? ;; generations
+       exact-integer? ;; offset
+       (listof exact-integer?) ;; kernel
+       (listof exact-integer?) ;; inits
+       (listof (listof exact-integer?)))]))
 
 ;; srfi-1
 ;; unfold p f g [tail-gen] -> list
@@ -167,14 +172,18 @@
 ;;       dur = voiceGenDur vgen
 ;;       op = voiceGenOp vgen
 
-;; I *cannot* figure out what contract should look like for iter-fun and iter-sum
-(define (list-comprehension-sum offset kern)
+(define/contract (list-comprehension-sum offset kern)
+  (-> exact-integer? (listof exact-integer?) (-> (listof exact-integer?) (listof exact-integer?)))
   (lambda (inits)
     (for*/list ([k kern] [i inits])
       (+ offset k i))))
 
+;; iterate answers a sequence? which is just an ordered sequence of values,
+;; use take from the seq module to consume 'generations' elements from iterate,
+;; then sequence->list to answer a list? instead of a sequence?
+;; (-> exact-integer? exact-integer? (listof exact-integer?) (listof exact-integer?) (listof (listof exact-integer?)))
 (define (iterate-list-comprehension-sum generations offset kern inits)
-  (->list (take generations (iterate (list-comprehension-sum offset kern) inits))))
+  (sequence->list (take generations (iterate (list-comprehension-sum offset kern) inits))))
 
 ;; Racket/Haskell equivalents:
 ;; unfold.rkt> (iter-sum 3 '(1 5 1) '(1 1))

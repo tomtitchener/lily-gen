@@ -2,16 +2,20 @@
 
 ;; generators:
 ;; - note or rest for as long as the shortest generator
+;; - num-denom pairs a time-signature/c
 ;; 
 ;; Utilities:
 ;; - generate while predicate succeeds e.g. up to some max total length
-;; - repeated generator for num-denom pairs a time-signature/c
 
 (provide
+ ;; synthesize Note or Rest from three input generators, else void when any input generator is done
+ note-or-rest-generator
+ ;; can't figure out contract, in detail:
+ ;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
+ ;; but also (can query each with generator-state)
+ ;; (-> generator? generator? generator? generator?)
+
  (contract-out
-  ;; synthesize Note or Rest from three input generators, else void when any input generator is done
-  [note-or-rest-generator (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) generator?)]
-  
   ;; generate until predicate fails or generator-state is done
   [generate-while (-> predicate/c generator? (listof any/c))]
 
@@ -26,31 +30,41 @@
 
 (require (only-in "utils.rkt" rotate-list-by))
 
+;; For proof of concept, answers a Note or a Rest and
+;;   yields until done, then answers void without
+;;   yielding to set generator-state to 'done.
+;; First, pick one from each of three input generators
+;;   pitch-or-f-gen, durations-gen, and accent-or-f-gen
+;; If generator-state for all three generators is 'done
+;;   else answer void without yielding to set 
+;;   generator-state to 'done
+;; Else if pitch-or-f is a pitch (not #f)
+;;   then generate a Note and yield
+;;   else, generate a Rest and yield
+;; Cannot figure out how to write a contract, implicitly
 ;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
-(define (note-or-rest-generator pitch-or-f-gen durations-gen accent-or-f-gen)
-  (define (generator-done? gen)
-    (symbol=? 'done (generator-state gen)))
-  (infinite-generator
-   (let ([pitch-or-f  (pitch-or-f-gen)]
-         [duration    (durations-gen)]
-         [accent-or-f (accent-or-f-gen)])
-     (when (ormap generator-done? (list pitch-or-f-gen durations-gen accent-or-f-gen))
-       void)
-     (if pitch-or-f
-         (let ([pitch    (car pitch-or-f)]
-               [octave   (cdr pitch-or-f)]
-               [controls (if accent-or-f (list accent-or-f) '())])
-           (yield (Note pitch octave duration controls #f)))
-         (yield (Rest duration))))))
+;; or really, (-> generator? generator? generator? generator?)
+;; but those fail due to generator being syntax, because args are part of macro?
+(define note-or-rest-generator
+  (generator (pitch-or-f-gen durations-gen accent-or-f-gen)
+    (infinite-generator
+     (define (generator-done? gen)
+       (symbol=? 'done (generator-state gen)))
+     (let ([pitch-or-f  (pitch-or-f-gen)]
+           [duration    (durations-gen)]
+           [accent-or-f (accent-or-f-gen)])
+       (when (ormap generator-done? (list pitch-or-f-gen durations-gen accent-or-f-gen))
+         void)
+       (if pitch-or-f
+           (let ([pitch    (car pitch-or-f)]
+                 [octave   (cdr pitch-or-f)]
+                 [controls (if accent-or-f (list accent-or-f) '())])
+             (yield (Note pitch octave duration controls #f)))
+           (yield (Rest duration)))))))
 
-;; (-> predicate/c generator? (listof any/c))
-(define (generate-while pred gen)
-  (let loop ()
-    (let ([next (gen)])
-      (cond [(eq? 'done (generator-state gen)) '()]
-            [(pred next) (cons next (loop))]
-            [else '()]))))
-
+;; Endless generator for (cons/c natural-number/c duration?) pairs
+;; according to different time signatures, simple, grouping, compound.
+;; Useful for keeping track of beats and bars.
 ;; (-> time-signature/c generator?)
 (define (time-signature->num-denom-generator timesig)
   (match timesig
@@ -71,6 +85,15 @@
                                     (map (lambda (num) (cons num denom)) nums)))
                                 nums-denoms)])
        (sequence->repeated-generator (apply append num-denom-prs)))]))
+
+;; (-> predicate/c generator? (listof any/c))
+(define/contract (generate-while pred gen)
+  (-> predicate/c generator? (listof any/c))
+  (let loop ()
+    (let ([next (gen)])
+      (cond [(eq? 'done (generator-state gen)) '()]
+            [(pred next) (cons next (loop))]
+            [else '()]))))
 
 (module+ test
   (require rackunit)

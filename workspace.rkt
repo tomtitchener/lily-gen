@@ -5,7 +5,6 @@
 ;; nothing to provide, this is a stub
 
 (require (only-in seq iterate take))
-(require relation/type)
 
 (require "score.rkt")
 (require "score-utils.rkt")
@@ -39,10 +38,10 @@
 
 (define tempo-param (make-parameter (TempoDur 'Q 60)))
 
-;; override when (length (kernel-param)) is 3, 5, etc, to unit or multiples
+;; override when (length (inits-param)) is 3, 5, etc, to unit or multiples
 (define beats-per-bar-param (make-parameter 4))
 
-;; when (length (kernel-param)) is 3, 5, etc, make this 'SF or multiples of 'SF
+;; for when (length (kernel-param)) is even, when it's 3, 5, etc, make this 'SF or multiples of 'SF
 (define duration-per-beat-param (make-parameter 'Q))
 
 (define time-signature (thunk (TimeSignatureSimple (beats-per-bar-param) (duration-per-beat-param))))
@@ -75,7 +74,7 @@
   (thunk
    (let ([shortest-dur  (duration->int (shortest-dur-param))]
          [kernel-length (length (kernel-param))])
-     (map int->durations (reverse (->list (take (gens-param) (iterate (curry * kernel-length) shortest-dur))))))))
+     (map int->durations (reverse (sequence->list (take (gens-param) (iterate (curry * kernel-length) shortest-dur))))))))
 
 (define/contract (durs&mpit->notes-or-rests durs mpitch)
   (-> (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))
@@ -208,5 +207,44 @@
 ;;
 ;; (parameterize ((gens-param 4) (scale-param C-whole-tone) (kernel-param '(0 2 1 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
 ;; (parameterize ((gens-param 5) (scale-param C-whole-tone) (kernel-param '(2 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
-;; lessons:  keep kernel param count to multiple of 2 otherwise rhythms go crazy (fix this)
 
+
+;; ascending/descending:
+;;
+;; (parameterize ((beats-per-bar-param 12) (duration-per-beat-param 'S) (shortest-dur-param 'T) (gens-param 4) (scale-param C-whole-tone)
+;;   (kernel-param '(0 5 1 4 3 2)) (inits-param '(0 1 -1 2 -2 0))) (gen-score-file/parameterized))
+;;
+;; really boring, six note inits is easly heard wanging around the six note transposes from kernel-param,
+;; everything fitting neatly inside other voices
+;;
+;; diverse lengths:
+;; 
+;; (parameterize ((beats-per-bar-param 12) (duration-per-beat-param 'S) (start-pitch-param (cons 'Ef '0va)) (shortest-dur-param 'T)
+;;   (gens-param 4) (scale-param Ef-major) (kernel-param '(0 5 -4)) (inits-param '(0 1 2 1))) (gen-score-file/parameterized))
+;;
+;; this gets play between 4 unit repetitions of inits vs. 3 unit transpositions from kernel, which plays out in 3x duration
+;; relation between voices so voice 4 moves 3x faster than voice 3 and etc. for voices 2 and 1 while inits unit is 4 notes
+;; so the faster voice fits in three reptitions of inits compared to 1 statement for the slower voice, something that's really
+;; only audible in the last two (fastest) voices because the first move too slowly
+;;
+;;(parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 6 1 2))
+;;(inits-param '(-4 -7 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
+;;
+;; this gets kernel:inits ratio of 4:3 to show syncopation between pattern (inits) and transpositions (kernel)
+;; also, with shortest-dur-param of 'T, doesn't go romping off to 'SF by default
+;;
+;; example of recreating from just midi file which turned out to be a morning's worth of effort
+;; easy enough to recreate key signature, but needed to remember starting pitch to get inits first
+;; from first voice, then kernel by count of repetitions from second voice
+;;
+;; what about a 2x rhythmic ratio between voices via a kernel and a long inits:
+;;
+;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3))
+;; (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
+;;
+;; gets you a frozen-while-flying or stroboscopic effect with each voice going 2x faster than next voice, 
+;; a simultaneous slo-mo
+;;
+;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3 4 2))
+;; (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
+;;
