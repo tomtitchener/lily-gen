@@ -37,7 +37,11 @@
   ;; extract duration from voice-event, 0 if none
   [voice-event->duration-int (-> voice-event/c natural-number/c)]
 
-  [scale->KeySignature (-> Scale? KeySignature?)])
+  [scale->KeySignature (-> Scale? KeySignature?)]
+
+  [duration->int  (-> symbol? natural-number/c)]
+  
+  [int->durations (-> natural-number/c (listof duration?))])
  
  ;; - - - - - - - - -
  ;; symbols and predicates
@@ -48,8 +52,6 @@
 (require "score-syms.rkt")
 
 (require (only-in "scale.rkt" Scale? pitch->chromatic-index scale->key-signature-values))
-
-(require "lily-utils.rkt")
 
 (define control/c
   (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
@@ -161,6 +163,41 @@
 
 (define voice-event/c
   (make-flat-contract #:name 'voice-event/c #:first-order (or/c Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
+
+;; TBD: move to score
+
+;; in 128ths 
+(define duration-vals
+ '(192 128
+    96  64
+    48  32
+    24  16
+    12   8
+     6   4
+     3   2
+     1))
+
+(define duration-int-hash (make-hash (map cons duration-syms duration-vals)))
+
+;; (-> symbol? natural-number/c)
+(define (duration->int duration)
+  (hash-ref duration-int-hash duration))
+
+(define int-duration-hash (make-hash (map cons duration-vals duration-syms)))
+
+;; totval is any non-zero positive integer,
+;; answer the list of durations large -> small to exhaust totval
+;; (-> natural-number/c (listof duration?))
+(define (int->durations totval)
+  (define (int->duration duration)
+    (hash-ref int-duration-hash duration))
+  (let inner ([tot totval]
+              [ret '()])
+    (if (zero? tot)
+        (reverse ret)
+        (let* ([nextval (findf ((curry >=) tot) duration-vals)]
+               [nextdur (int->duration nextval)])
+          (inner (- tot nextval) (cons nextdur ret))))))
 
 ;; (-> voice-event/c natural-number/c)
 (define (voice-event->duration-int voice-event)

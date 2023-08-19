@@ -38,7 +38,7 @@
 
 ;; - - - - - - - - -
 ;; implementation
-(require srfi/1)
+(require (only-in srfi/1 list-index))
 
 (define pitch-class-syms
  '(Bs  C  Dff

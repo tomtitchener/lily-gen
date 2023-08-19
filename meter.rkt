@@ -42,8 +42,6 @@
 
 (require "generators.rkt")
 
-(require "lily-utils.rkt")
-
 (require "utils.rkt")
 
 ;; advance (num . denom) cycle through curlen until there's less than a barlen left

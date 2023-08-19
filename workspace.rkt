@@ -10,7 +10,6 @@
 (require "score-utils.rkt")
 (require "scale.rkt")
 (require "lily.rkt")
-(require "lily-utils.rkt")
 
 ;; first target:  transpose/iterate
 

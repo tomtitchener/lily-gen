@@ -30,8 +30,6 @@
 
 (require (only-in "scale.rkt" pitch->chromatic-index))
 
-(require (only-in "lily-utils.rkt" duration->int))
-
 ;; answer list of total durs because KeyboardVoice has treble and bass voices
 ;; (-> voice/c (listof natural-number/c))
 (define (voice->total-durs voice)

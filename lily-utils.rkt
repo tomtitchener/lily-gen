@@ -18,12 +18,7 @@
  instr->lily        ;; full midi instrument name
  instr->short-lily  ;; shortened instrument name for left margin
  clef->lily
- mode->lily
- 
- ;; contracts 
- (contract-out
-  [duration->int  (-> symbol? natural-number/c)]
-  [int->durations (-> natural-number/c (listof duration?))]))
+ mode->lily)
 
 ;; - - - - - - - - -
 ;; implementation
@@ -75,44 +70,11 @@
     "32." "32"
     "64." "64"
     "128"))
-
-;; in 128ths 
-(define duration-vals
- '(192 128
-    96  64
-    48  32
-    24  16
-    12   8
-     6   4
-     3   2
-     1))
   
 (define sym-duration-hash (make-hash (map cons duration-syms duration-lily-strings)))
 
 (define (duration->lily duration)
   (hash-ref sym-duration-hash duration))
-
-(define duration-int-hash (make-hash (map cons duration-syms duration-vals)))
-
-;; (-> symbol? natural-number/c)
-(define (duration->int duration)
-  (hash-ref duration-int-hash duration))
-
-(define int-duration-hash (make-hash (map cons duration-vals duration-syms)))
-
-;; totval is any non-zero positive integer,
-;; answer the list of durations large -> small to exhaust totval
-;; (-> natural-number/c (listof duration?))
-(define (int->durations totval)
-  (define (int->duration duration)
-    (hash-ref int-duration-hash duration))
-  (let inner ([tot totval]
-              [ret '()])
-    (if (zero? tot)
-        (reverse ret)
-        (let* ([nextval (findf ((curry >=) tot) duration-vals)]
-               [nextdur (int->duration nextval)])
-          (inner (- tot nextval) (cons nextdur ret))))))
 
 (define accent-lily-strings '("-^" "--" "-!" "-."  "->" "-_"))
 
