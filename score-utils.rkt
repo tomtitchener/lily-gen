@@ -1,6 +1,6 @@
 #lang racket
 
-;; score-utils: utilities that depend only on score and lily-utils
+;; score-utils: utilities that depend only on score
 
 (provide
  (contract-out
@@ -28,7 +28,7 @@
 ;; implementation
 (require "score.rkt")
 
-(require (only-in "scale.rkt" pitch->chromatic-index))
+(require (only-in "scale.rkt" compare-pitches pitch->chromatic-index))
 
 ;; answer list of total durs because KeyboardVoice has treble and bass voices
 ;; (-> voice/c (listof natural-number/c))
@@ -84,7 +84,6 @@
 (define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)
   (define max-count-window-pitches 5)
   (define (max-note-for-clef clef) (if (symbol=? 'Bass clef) (cons 'F '0va) (cons 'G '8vb)))
-  (define (compare-pitches cmp pitch1 pitch2) (cmp (pitch->chromatic-index pitch1) (pitch->chromatic-index pitch2)))
   (define (pitch-within-clef? clef pitch)
     (let ([max-or-min-note (max-note-for-clef clef)]
           [cmp-op (if (symbol=? 'Bass clef) <= >=)])

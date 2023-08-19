@@ -52,10 +52,10 @@
   [pitch->index (-> Scale? pitch/c natural-number/c)]
 
   ;; compare two pitches from the same scale by the relational operator in the first argument
-  [compare-pitches (-> (-> any/c any/c boolean?) Scale? pitch/c pitch/c boolean?)]
+  [compare-pitches (-> (-> any/c any/c boolean?) pitch/c pitch/c boolean?)]
 
   ;; pitch-range-pair is inclusive
-  [pitch-in-range? (-> Scale? PitchRangeMinMaxPair? pitch/c maybe-pitch/c)]
+  [pitch-in-range? (-> PitchRangeMinMaxPair? pitch/c maybe-pitch/c)]
   
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
@@ -309,14 +309,14 @@
     (+ (* octave-idx pitch-classes-count) pitch-classes-idx)))
 
 ;; to compare two pitches from the same scale compare their pitch indices 
-(define (compare-pitches op scale pitch-1 pitch-2)
-  (op (pitch->index scale pitch-1) (pitch->index scale pitch-2)))
+(define (compare-pitches op pitch-1 pitch-2)
+  (op (pitch->chromatic-index pitch-1) (pitch->chromatic-index pitch-2)))
 
 ;; pitch-range-pair is inclusive
-(define (pitch-in-range? scale pitch-range-pair pitch)
+(define (pitch-in-range? pitch-range-pair pitch)
   (let ([min-pitch (PitchRangeMinMaxPair-min pitch-range-pair)]
         [max-pitch (PitchRangeMinMaxPair-max pitch-range-pair)])
-    (if (and (compare-pitches >= scale pitch min-pitch) (compare-pitches <= scale pitch max-pitch))
+    (if (and (compare-pitches >= pitch min-pitch) (compare-pitches <= pitch max-pitch))
         pitch
         #f)))
 
@@ -325,7 +325,7 @@
 
 (define/contract (pitch-range-min-max-pair-ctor scale min max type-name)
   (-> Scale? pitch/c pitch/c symbol? (values Scale? pitch/c pitch/c))
-  (when (compare-pitches >= scale min max)
+  (when (compare-pitches >= min max)
     (error 'PitchRangeMinMaxPair "min %v is not < max %v" min max))
   (values scale min max))
 
@@ -360,7 +360,7 @@
   (-> Scale? pitch/c PitchRangeMinMaxPair? exact-integer? maybe-pitch/c)
   (let* ([pitch-idx (pitch->index scale pitch)]
          [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
-    (pitch-in-range? scale pitch-range-min-max-pair xposed-pitch)))
+    (pitch-in-range? pitch-range-min-max-pair xposed-pitch)))
 
 ;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
 (define (transpose/successive scale pitch-range-min-max-pair pitch interval/intervals)
