@@ -29,7 +29,12 @@
   ;; and end as interval -/+ 1 (up/down) to generate interval count of steps
   [scale-steps-generator (-> Scale? pitch/c exact-integer? generator?)]
 
-  [scale-steps-generator-generator (-> (-> pitch/c generator?) generator? generator?)]
+  ;; given a way to initialize an inner generator from the output of an
+  ;; outer generator and an outer generator, return a generator that 
+  ;; generates n * m elements where n is the count elements from the
+  ;; outer generator and n is the count of elements from the inner
+  ;; generator
+  [generator-generator (-> (-> any/c generator?) generator? generator?)]
   ))
 
 ;; - - - - - - - - -
@@ -121,8 +126,8 @@
          [stop-pitch  (xpose scale pitch-range start-pitch interval-adj)])
     (sequence->generator (scale->pitch-range scale (cons start-pitch stop-pitch)))))
 
-;; ((-> pitch/c generator?) generator? generator?)
-(define (scale-steps-generator-generator gen-inner-gen outer-gen)
+;; ((-> any/c generator?) generator? generator?)
+(define (generator-generator gen-inner-gen outer-gen)
   (let ([inner-gen '()])
     (generator ()
       (let loop ()
@@ -131,17 +136,16 @@
            (void)]
           [(or (symbol=? 'fresh (generator-state outer-gen))
                (symbol=? 'done  (generator-state inner-gen)))
-           (let ([next-outer-pitch (outer-gen)])
+           (let ([next-outer-element (outer-gen)])
              (when (symbol=? 'suspended (generator-state outer-gen))
                (begin
-                 (set! inner-gen (gen-inner-gen next-outer-pitch))
-                 (let ([next-inner-pitch (inner-gen)])
-                   (yield next-inner-pitch))))
+                 (set! inner-gen (gen-inner-gen next-outer-element))
+                 (yield (inner-gen))))
                (loop))]
           [(symbol=? 'suspended (generator-state inner-gen))
-           (let ([next-inner-pitch (inner-gen)])
+           (let ([next-inner-element (inner-gen)])
              (when (symbol=? 'suspended (generator-state inner-gen))
-               (yield next-inner-pitch))
+               (yield next-inner-element))
              (loop))])))))
 
 ;; (-> predicate/c generator? (listof any/c))
@@ -180,18 +184,21 @@
         [seven-eight-six-eight-time-signature (TimeSignatureCompound (list (list 2 2 3 'E) (list 2 2 2 'E)))]
         [length<=? (lambda (m) (sum<=? (lambda (_) 1) m))])
     (check-equal? (generate-while (length<=? 3) (time-signature->num-denom-generator three-four-time-signature))
-                  (list (cons 3 'Q) (cons 3 'Q) (cons 3 'Q)))
+                  '((3 . Q) (3 . Q) (3 . Q)))
     (check-equal? (generate-while (length<=? 6) (time-signature->num-denom-generator seven-eight-time-signature))
-                  (list (cons 2 'E) (cons 2 'E) (cons 3 'E) (cons 2 'E) (cons 2 'E) (cons 3 'E)))
+                  '((2 . E) (2 . E) (3 . E) (2 . E) (2 . E) (3 . E)))
     (check-equal? (generate-while (length<=? 9) (time-signature->num-denom-generator seven-eight-six-eight-time-signature))
-                  (list (cons 2 'E) (cons 2 'E) (cons 3 'E)
-                        (cons 2 'E) (cons 2 'E) (cons 2 'E)
-                        (cons 2 'E) (cons 2 'E) (cons 3 'E))))
+                  '((2 . E) (2 . E) (3 . E) (2 . E) (2 . E) (2 . E) (2 . E) (2 . E) (3 . E))))
   (let* ([elements-list '(a b c d)]
          [weighted-list-gen (weighted-list-element-generator '(1 1 1 1) elements-list)])
     (for ((_ (in-range 100))) (check member (weighted-list-gen) elements-list)))
-  (check-equal? (generate-while identity (scale-steps-generator C-major (cons 'C '0va) 7))
-                (list (cons 'C '0va) (cons 'D '0va) (cons 'E '0va) (cons 'F '0va) (cons 'G '0va) (cons 'A '0va) (cons 'B '0va)))
+  (check-equal? (generate-while identity (scale-steps-generator C-major '(C . 0va) 7))
+                '((C . 0va) (D . 0va) (E . 0va) (F . 0va) (G . 0va) (A . 0va) (B . 0va)))
   (check-equal? (generate-while identity (scale-steps-generator C-major (cons 'C '0va) -7))
-                (list (cons 'C '0va) (cons 'B '8vb) (cons 'A '8vb) (cons 'G '8vb) (cons 'F '8vb) (cons 'E '8vb) (cons 'D '8vb)))
+                '((C . 0va) (B . 8vb) (A  . 8vb) (G . 8vb) (F . 8vb) (E . 8vb) (D . 8vb)))
+  (let* ([outer (scale-steps-generator C-major (cons 'C '8vb) 3)]
+         [gen-inner (lambda (pitch) (scale-steps-generator C-major pitch 3))]
+         [gen-gen (generator-generator gen-inner outer)])
+    (check-equal? (generate-while identity gen-gen)
+                  '((C . 8vb) (D . 8vb) (E . 8vb) (D . 8vb) (E . 8vb) (F . 8vb) (E . 8vb) (F . 8vb) (G . 8vb))))
   )
