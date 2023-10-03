@@ -29,7 +29,18 @@ Single lily-gen package with integrated product types in score.rkt, lilypond
 behavior in lily.gen, and utilities.  At best, put all this one level deeper
 into a lib folder so the top level can be for languages.  
 
-        
+
+generators.rkt> (pseudo-random-generator->vector (current-pseudo-random-generator))
+'#(1846850895 3353127980 1207956883 3687271794 827146902 2053591720)
+generators.rkt> (random)
+0.701459829905919
+generators.rkt> (random)
+0.13014560823102633
+generators.rkt> (current-pseudo-random-generator (vector->pseudo-random-generator '#(1846850895 3353127980 1207956883 3687271794 827146902 2053591720)))
+generators.rkt> (random)
+0.701459829905919
+generators.rkt> (random)
+0.13014560823102633
+
 
    
-

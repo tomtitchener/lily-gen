@@ -8,59 +8,62 @@
 ;; - generate while predicate succeeds e.g. up to some max total length
 
 (provide
- ;; synthesize Note or Rest from three input generators, else void when any input generator is done
- note-or-rest-generator
- ;; can't figure out contract, in detail:
- ;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
- ;; but also (can query each with generator-state)
- ;; (-> generator? generator? generator? generator?)
-
  (contract-out
+  ;; proof of concept for nested generators, yield a Note or a Rest until a 
+  ;; nested generator is done, then answers void without yielding so state
+  ;; state becomes 'done, nested generators are pitch-or-f, duration, accent-or-f
+  [note-or-rest-generator (-> generator? generator? generator? generator?)]
+ 
   ;; generate until predicate fails or generator-state is done
   [generate-while (-> predicate/c generator? (listof any/c))]
 
-  ;; endlessly generate num-denom pair(s) from time-signature
-  [time-signature->num-denom-generator (-> time-signature/c generator?)]))
+  ;; generate num-denom pair(s) from time-signature
+  [time-signature->num-denom-generator (-> time-signature/c generator?)]
+
+  ;; generate random pick from listof any/c based on weights,
+  ;; e.g. weights (1 1 1) -> (1/3 1/3 1/3), (1 1 2) -> (1/4 1/4 1/2), etc.
+  [weighted-list-element-generator (-> (listof exact-positive-integer?) (listof any/c) generator?)]
+
+  ;; generate step-wise list of pitch/c given Scale?
+  ;; exact-integer? as interval as count of steps, with start on start-pitch
+  ;; and end as interval -/+ 1 (up/down) to generate interval count of steps
+  [scale-steps-generator (-> Scale? pitch/c exact-integer? generator?)]
+
+  [scale-steps-generator-generator (-> (-> pitch/c generator?) generator? generator?)]
+  ))
 
 ;; - - - - - - - - -
 ;; implementation
 (require racket/generator)
 
+(require (only-in algorithms scanl))
+
+(require (only-in srfi/1 list-index))
+
 (require lily-gen/lib/score)
 
-(require (only-in lily-gen/lib/utils rotate-list-by))
+(require lily-gen/lib/scale)
 
-;; For proof of concept, answers a Note or a Rest and
-;;   yields until done, then answers void without
-;;   yielding to set generator-state to 'done.
-;; First, pick one from each of three input generators
-;;   pitch-or-f-gen, durations-gen, and accent-or-f-gen
-;; If generator-state for all three generators is 'done
-;;   else answer void without yielding to set 
-;;   generator-state to 'done
-;; Else if pitch-or-f is a pitch (not #f)
-;;   then generate a Note and yield
-;;   else, generate a Rest and yield
-;; Cannot figure out how to write a contract, implicitly
-;; (-> (-> (or/c pitch/c false/c)) (-> duration?) (-> (or/c accent? false/c)) (-> (or/c Note? Rest?)))
-;; or really, (-> generator? generator? generator? generator?)
-;; but those fail due to generator being syntax, because args are part of macro?
-(define note-or-rest-generator
-  (generator (pitch-or-f-gen durations-gen accent-or-f-gen)
-    (infinite-generator
+(require (only-in lily-gen/lib/utils rotate-list-by sum<=?))
+
+;; (-> generator? generator? generator? generator?)
+(define (note-or-rest-generator pitch-or-f-gen duration-gen accent-or-f-gen)
+  (generator ()
      (define (generator-done? gen)
        (symbol=? 'done (generator-state gen)))
-     (let ([pitch-or-f  (pitch-or-f-gen)]
-           [duration    (durations-gen)]
-           [accent-or-f (accent-or-f-gen)])
-       (when (ormap generator-done? (list pitch-or-f-gen durations-gen accent-or-f-gen))
-         void)
-       (if pitch-or-f
-           (let ([pitch    (car pitch-or-f)]
-                 [octave   (cdr pitch-or-f)]
-                 [controls (if accent-or-f (list accent-or-f) '())])
-             (yield (Note pitch octave duration controls #f)))
-           (yield (Rest duration)))))))
+     (let loop ()
+       (let ([pitch-or-f  (pitch-or-f-gen)]
+             [duration    (duration-gen)]
+             [accent-or-f (accent-or-f-gen)])
+         (when (ormap generator-done? (list pitch-or-f-gen duration-gen accent-or-f-gen))
+           (void))
+         (if pitch-or-f  
+             (let ([pitch    (car pitch-or-f)]
+                   [octave   (cdr pitch-or-f)]
+                   [controls (if accent-or-f (list accent-or-f) '())])
+               (yield (Note pitch octave duration controls #f)))
+             (yield (Rest duration)))
+         (loop)))))
 
 ;; Endless generator for (cons/c natural-number/c duration?) pairs
 ;; according to different time signatures, simple, grouping, compound.
@@ -86,9 +89,63 @@
                                 nums-denoms)])
        (sequence->repeated-generator (apply append num-denom-prs)))]))
 
+;;generators.rkt> (ez-weighted-random-list-element '(1 1 1))
+;; '(1/3 1/3 1/3)
+;; generators.rkt> (ez-weighted-random-list-element '(1 1 4))
+;; '(1/6 1/6 2/3)
+(define (gen-fractions ws) ;; (w)eight(s) 
+  (let ([tot (apply + ws)])
+    (map (lambda (w) (/ w tot)) ws)))
+
+;; generators.rkt> (gen-buckets (gen-fractions '(1 1 4)))
+;; '(1/6 1/3 1)
+(define (gen-buckets ws) ;; (w)eight(s)
+  (scanl + (gen-fractions ws)))
+
+;; (-> (listof exact-positive-integer?) (listof any/c) generator?)
+(define (weighted-list-element-generator weights elements)
+  (unless (= (length weights) (length elements))
+    (error 'weighted-random-list-element-generator "unequal lengths of weights ~s and elements ~s" (length weights) (length weights)))
+  (let ([buckets (gen-buckets (gen-fractions weights))])
+    (infinite-generator
+     (let* ([r (random)]
+            [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
+       (unless ix
+         (error 'weighted-random-list-element-generator "failed to find random value ~s in buckets ~s" r buckets))
+       (yield (list-ref elements ix))))))
+
+;; (-> Scale? pitch/c exact-integer? generator?)
+(define (scale-steps-generator scale start-pitch interval)
+  (let* ([pitch-range (scale->PitchRangeMinMaxPair scale)]
+         [interval-adj (if (positive? interval) (sub1 interval) (add1 interval))]
+         [stop-pitch  (xpose scale pitch-range start-pitch interval-adj)])
+    (sequence->generator (scale->pitch-range scale (cons start-pitch stop-pitch)))))
+
+;; ((-> pitch/c generator?) generator? generator?)
+(define (scale-steps-generator-generator gen-inner-gen outer-gen)
+  (let ([inner-gen '()])
+    (generator ()
+      (let loop ()
+        (cond
+          [(symbol=? 'done (generator-state outer-gen))
+           (void)]
+          [(or (symbol=? 'fresh (generator-state outer-gen))
+               (symbol=? 'done  (generator-state inner-gen)))
+           (let ([next-outer-pitch (outer-gen)])
+             (when (symbol=? 'suspended (generator-state outer-gen))
+               (begin
+                 (set! inner-gen (gen-inner-gen next-outer-pitch))
+                 (let ([next-inner-pitch (inner-gen)])
+                   (yield next-inner-pitch))))
+               (loop))]
+          [(symbol=? 'suspended (generator-state inner-gen))
+           (let ([next-inner-pitch (inner-gen)])
+             (when (symbol=? 'suspended (generator-state inner-gen))
+               (yield next-inner-pitch))
+             (loop))])))))
+
 ;; (-> predicate/c generator? (listof any/c))
-(define/contract (generate-while pred gen)
-  (-> predicate/c generator? (listof any/c))
+(define (generate-while pred gen)
   (let loop ()
     (let ([next (gen)])
       (cond [(eq? 'done (generator-state gen)) '()]
@@ -130,6 +187,11 @@
                   (list (cons 2 'E) (cons 2 'E) (cons 3 'E)
                         (cons 2 'E) (cons 2 'E) (cons 2 'E)
                         (cons 2 'E) (cons 2 'E) (cons 3 'E))))
+  (let* ([elements-list '(a b c d)]
+         [weighted-list-gen (weighted-list-element-generator '(1 1 1 1) elements-list)])
+    (for ((_ (in-range 100))) (check member (weighted-list-gen) elements-list)))
+  (check-equal? (generate-while identity (scale-steps-generator C-major (cons 'C '0va) 7))
+                (list (cons 'C '0va) (cons 'D '0va) (cons 'E '0va) (cons 'F '0va) (cons 'G '0va) (cons 'A '0va) (cons 'B '0va)))
+  (check-equal? (generate-while identity (scale-steps-generator C-major (cons 'C '0va) -7))
+                (list (cons 'C '0va) (cons 'B '8vb) (cons 'A '8vb) (cons 'G '8vb) (cons 'F '8vb) (cons 'E '8vb) (cons 'D '8vb)))
   )
-
-

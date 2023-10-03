@@ -90,8 +90,7 @@
   [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]
 
   ;; iterate transposition of list of pitches by list of list-comprehension over sums of list of exact-integer?
-  ;; for the number of generations in the first arg,
-  ;; answer generations each in its own list
+  ;; for the number of generations in the first arg, answers generations each in its own list
   [transpose/iterate (-> natural-number/c
                          Scale?
                          PitchRangeMinMaxPair?
@@ -363,7 +362,7 @@
 (define (xpose scale pitch-range-min-max-pair pitch interval)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
     (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
-  (xpose/internal scale pitch (scale->pitch-range scale) pitch-range-min-max-pair interval))
+  (xpose/internal scale pitch pitch-range-min-max-pair interval))
 
 ;; pitch and pitch-range-min-max-pair already guarded, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
