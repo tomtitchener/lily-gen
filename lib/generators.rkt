@@ -201,4 +201,14 @@
          [gen-gen (generator-generator gen-inner outer)])
     (check-equal? (generate-while identity gen-gen)
                   '((C . 8vb) (D . 8vb) (E . 8vb) (D . 8vb) (E . 8vb) (F . 8vb) (E . 8vb) (F . 8vb) (G . 8vb))))
+  (let* ([outer (scale-steps-generator C-major (cons 'C '8vb) -3)]
+         [gen-inner (lambda (pitch) (scale-steps-generator C-major pitch 3))]
+         [gen-gen (generator-generator gen-inner outer)])
+    (check-equal? (generate-while identity gen-gen)
+                  '((C . 8vb) (D . 8vb) (E . 8vb) (B . 15vb) (C . 8vb) (D . 8vb) (A . 15vb) (B . 15vb) (C . 8vb))))
+  (let* ([outer (scale-steps-generator C-major (cons 'C '8vb) -3)]
+                       [gen-inner (lambda (pitch) (scale-steps-generator C-major pitch -3))]
+                       [gen-gen (generator-generator gen-inner outer)])
+    (check-equal? (generate-while identity gen-gen)
+                  '((C . 8vb) (B . 15vb) (A . 15vb) (B . 15vb) (A . 15vb) (G . 15vb) (A . 15vb) (G . 15vb) (F . 15vb))))
   )
