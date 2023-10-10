@@ -22,12 +22,15 @@
 
   ;; generate random pick from listof any/c based on weights,
   ;; e.g. weights (1 1 1) -> (1/3 1/3 1/3), (1 1 2) -> (1/4 1/4 1/2), etc.
-  [weighted-list-element-generator (-> (listof exact-positive-integer?) (listof any/c) generator?)]
+  [weighted-list-element-generator (-> (non-empty-listof exact-positive-integer?) (non-empty-listof any/c) generator?)]
 
   ;; generate step-wise list of pitch/c given Scale?
   ;; exact-integer? as interval as count of steps, with start on start-pitch
   ;; and end as interval -/+ 1 (up/down) to generate interval count of steps
   [scale-steps-generator (-> Scale? pitch/c exact-integer? generator?)]
+
+  ;; (-> Scale? pitch/c (listof exact-integer?) generator?)
+  [scale-xpose-generator (-> Scale? pitch/c (listof exact-integer?) generator?)]
 
   ;; given a way to initialize an inner generator from the output of an
   ;; outer generator and an outer generator, return a generator that 
@@ -35,6 +38,13 @@
   ;; outer generator and n is the count of elements from the inner
   ;; generator
   [generator-generator (-> (-> any/c generator?) generator? generator?)]
+
+  ;; Wrap inner generator with random selection of elements including #f
+  ;; based on input weights.  Length of weights must equal length of elements
+  ;; answered by (inner-gen) + 1 for #f as last weight in list is weight for #f.
+  ;; That is, weights (1 1 2) with inner generator that answers either 'a or 'b
+  ;; means 25% chance for 'a, 25% for 'b, and 50% for #f.
+  [weighted-list-or-f-generator-generator (-> (non-empty-listof exact-integer?) generator? generator?)]
   ))
 
 ;; - - - - - - - - -
@@ -107,16 +117,15 @@
 (define (gen-buckets ws) ;; (w)eight(s)
   (scanl + (gen-fractions ws)))
 
-;; (-> (listof exact-positive-integer?) (listof any/c) generator?)
+;; (-> (non-empty-listof exact-positive-integer?) (non-empty-listof any/c) generator?)
 (define (weighted-list-element-generator weights elements)
   (unless (= (length weights) (length elements))
-    (error 'weighted-random-list-element-generator "unequal lengths of weights ~s and elements ~s" (length weights) (length weights)))
+    (error 'weighted-random-list-element-generator "unequal lengths of weights ~v and elements ~v"
+           (length weights) (length weights)))
   (let ([buckets (gen-buckets (gen-fractions weights))])
     (infinite-generator
      (let* ([r (random)]
             [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
-       (unless ix
-         (error 'weighted-random-list-element-generator "failed to find random value ~s in buckets ~s" r buckets))
        (yield (list-ref elements ix))))))
 
 ;; (-> Scale? pitch/c exact-integer? generator?)
@@ -125,6 +134,11 @@
          [interval-adj (if (positive? interval) (sub1 interval) (add1 interval))]
          [stop-pitch  (xpose scale pitch-range start-pitch interval-adj)])
     (sequence->generator (scale->pitch-range scale (cons start-pitch stop-pitch)))))
+
+;; (-> Scale? pitch/c (listof exact-integer?) generator?)
+(define (scale-xpose-generator scale start-pitch intervals)
+  (let ([pitch-range (scale->PitchRangeMinMaxPair scale)])
+    (sequence->generator (transpose/absolute scale pitch-range start-pitch intervals))))
 
 ;; ((-> any/c generator?) generator? generator?)
 (define (generator-generator gen-inner-gen outer-gen)
@@ -148,6 +162,29 @@
                (yield next-inner-element))
              (loop))])))))
 
+;; chooses one of (append (inner-gen) '(#f)) based on weights
+;; alternative: choose either all of (inner-gen) or #f, with
+;; only two values in weights
+;; (-> (non-empty-listof exact-integer?) generator? generator?)
+(define (weighted-list-or-f-generator-generator weights inner-gen)
+  (let ([buckets (gen-buckets (gen-fractions weights))])
+    (generator ()
+      (let loop ()
+        (let ([elements (append (list (inner-gen) (list #f)))])
+          (cond [(symbol=? 'done (generator-state inner-gen))
+                 (void)]
+                [else
+                 ;; cannot know ahead of time if length of weights 
+                 ;; matches 1 + (length (inner-gen))
+                 (unless (eq? (length elements) (length weights))
+                   (error 'weighted-list-or-f-generator-generator
+                          "length elements ~v is different from length weights ~v"
+                          (length elements) (length weights)))
+                 (let* ([r (random)]
+                        [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
+                   (yield (list-ref elements ix))
+                   (loop))]))))))
+
 ;; (-> predicate/c generator? (listof any/c))
 (define (generate-while pred gen)
   (let loop ()
@@ -158,6 +195,7 @@
 
 (module+ test
   (require rackunit)
+  (require rackcheck)
   (require (only-in lily-gen/lib/utils sum<=?))
   (require (only-in lily-gen/lib/score voice-event->duration-int))
   (let* ([pitch-or-f-gen  (sequence->repeated-generator (list (cons 'C '0va) #f (cons 'E '0va)))]
@@ -207,8 +245,66 @@
     (check-equal? (generate-while identity gen-gen)
                   '((C . 8vb) (D . 8vb) (E . 8vb) (B . 15vb) (C . 8vb) (D . 8vb) (A . 15vb) (B . 15vb) (C . 8vb))))
   (let* ([outer (scale-steps-generator C-major (cons 'C '8vb) -3)]
-                       [gen-inner (lambda (pitch) (scale-steps-generator C-major pitch -3))]
-                       [gen-gen (generator-generator gen-inner outer)])
+         [gen-inner (lambda (pitch) (scale-steps-generator C-major pitch -3))]
+         [gen-gen (generator-generator gen-inner outer)])
     (check-equal? (generate-while identity gen-gen)
                   '((C . 8vb) (B . 15vb) (A . 15vb) (B . 15vb) (A . 15vb) (G . 15vb) (A . 15vb) (G . 15vb) (F . 15vb))))
+  (check-equal? (generate-while identity (scale-xpose-generator C-major '(C . 0va) '(0 6 0 6)))
+                '((C . 0va) (B . 0va) (C . 0va) (B . 0va)))
+  ;; compose: (generator-generator (generator-generator ..))
+  (let* ([outer (scale-steps-generator C-major (cons 'C '8va) -3)]
+         [gen-inner-outer (lambda (pitch) (scale-steps-generator C-major pitch 3))]
+         [gen-gen (generator-generator gen-inner-outer outer)]
+         [gen-inner-inner (lambda (pitch) (scale-xpose-generator C-major pitch '(0 1 0 -1)))]
+         [gen-gen-gen (generator-generator gen-inner-inner gen-gen)])
+    (check-equal? (generate-while identity gen-gen-gen)
+                  '((C . 8va) ;; (C . 8va) (C . 8va) 
+                    (D . 8va)
+                    (C . 8va)
+                    (B . 0va)
+                    (D . 8va) ;; (D . 8va)
+                    (E . 8va)
+                    (D . 8va)
+                    (C . 8va)
+                    (E . 8va) ;; (E . 8va)
+                    (F . 8va)
+                    (E . 8va)
+                    (D . 8va)
+                    (B . 0va) ;; (B . 0va) (B . 0va)
+                    (C . 8va)
+                    (B . 0va)
+                    (A . 0va)
+                    (C . 8va) ;; (C . 8va) 
+                    (D . 8va)
+                    (C . 8va)
+                    (B . 0va)
+                    (D . 8va) ;; (D . 8va)
+                    (E . 8va)
+                    (D . 8va)
+                    (C . 8va)
+                    (A . 0va) ;; (A . 0va) (A . 0va)
+                    (B . 0va)
+                    (A . 0va)
+                    (G . 0va)
+                    (B . 0va) ;; (B . 0va)
+                    (C . 8va)
+                    (B . 0va)
+                    (A . 0va)
+                    (C . 8va) ;; (C . 8va)
+                    (D . 8va)
+                    (C . 8va)
+                    (B . 0va))))
+  (let* ([inner (scale-steps-generator C-major (cons 'C '8va) -3)]
+         [outer (weighted-list-or-f-generator-generator '(1 1) inner)])
+    (check-equal? (length (generate-while identity outer)) 3))
+  (check-property
+   (property ([nats (gen:list gen:natural)])
+             ;; can't ask gen:list for a minimum number of elements, need at least two
+             (let* ([weights (if (null? nats)
+                                 '(1 1)
+                                 (if (= 1 (length nats))
+                                     (cons 1 nats)
+                                     nats))]
+                    [ix (list-index (lambda (bucket) (<= (random) bucket)) (gen-buckets weights))])
+               (and (check >= ix 0) (check <= ix (sub1 (length weights)))))))
   )
