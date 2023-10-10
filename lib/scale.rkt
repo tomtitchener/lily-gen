@@ -24,7 +24,7 @@
 
  ;; C-anchored diatonic scales
  C-whole-tone
- Df-whole-tone
+ Df-whole-tone 
  
  ;; diatonic major scales from Cff-major to Fss-major
  (matching-identifiers-out #rx".*-major" (all-defined-out))
@@ -38,6 +38,10 @@
  ;; - - - - - - - - -
  ;; Utilities
  (contract-out
+  [octatonic-whole-scale (-> pitch-class? Scale?)]
+  
+  [octatonic-half-scale (-> pitch-class? Scale?)]
+  
   [scale->key-signature-values  (-> Scale? (values pitch-class? mode?))]
   
   [pitch->chromatic-index (-> pitch/c natural-number/c)]
@@ -103,6 +107,8 @@
 
 ;; - - - - - - - - -
 ;; implementation
+(require (only-in seq find))
+
 (require (only-in racket/provide matching-identifiers-out))
 
 (require (only-in algorithms scanl))
@@ -142,10 +148,44 @@
 
 (define chromatic-flats (Scale '(C Df D Ef E F Gf G Af A Bf Cf)))
 
+;; TBD: generate whole tone scales given tonic
+
 ;; only two unique whole-tone scales
 (define C-whole-tone (Scale '(C D E Fs Gs As)))
 
 (define Df-whole-tone (Scale '(Df Ef F G A B)))
+
+;; octatonic scales that start with whole tone
+
+;; three octatonic scales that start with a whole step
+(define octatonic-whole-pitch-classes-list (list '(Ef F Fs Gs A B C D)
+                                                 '(D E F G Gs As B Cs)
+                                                 '(Cs Ds E Fs G A Bf C)))
+
+;; three octatonic scales that start with a half step
+(define octatonic-half-pitch-classes-list (list '(D Ef F Fs Gs A B C)
+                                                '(Cs D E F G Gs As B)
+                                                '(C Cs Ds E Fs G A Bf)))
+
+;; TBD: retry with enharmonic equivalents for root on failure, e.g. no Ff but E is ok.
+;; search each of lists of octatonic pitch classes  where root is at index 0, 2, 4, 6
+(define/contract (octatonic-scale root pcs-list)
+  (-> pitch-class? (listof (listof pitch-class?)) Scale?)
+  (let ([index-scale-list 
+         (find (lambda (pr)
+                 (let ([index (first pr)]
+                       [pcs (second pr)])
+                   (symbol=? root (list-ref pcs index))))
+               (for*/list ([pcs pcs-list]
+                           [index '(0 2 4 6)])
+                 (list index pcs)))])
+    (if (not index-scale-list)
+        (error 'octatonic-scale "no root ~v for octatonic pitch classes list ~v pcs-list" root pcs-list)
+        (Scale (rotate-list-by (second index-scale-list) (first index-scale-list))))))
+
+(define (octatonic-whole-scale root) (octatonic-scale root octatonic-whole-pitch-classes-list))
+
+(define (octatonic-half-scale root) (octatonic-scale root octatonic-half-pitch-classes-list))
 
 ;; used to order diatonic scale pitch classes ascending pitch-class
 ;; closest to C to match groupings on keyboard which in turn matches
