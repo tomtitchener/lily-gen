@@ -5,11 +5,14 @@
 ;; nothing to provide, this is a stub
 
 (require (only-in seq iterate take))
+(require (only-in srfi/1 list-index))
+(require racket/generator)
 
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
 (require lily-gen/lib/scale)
 (require lily-gen/lib/lily)
+(require lily-gen/lib/generators)
 
 ;; first target:  transpose/iterate
 
@@ -25,7 +28,7 @@
 
 (define key-signature (thunk (scale->KeySignature (scale-param))))
 
-(define scale-range-min-max-pair-param (thunk (scale->PitchRangeMinMaxPair (scale-param))))
+(define scale-range-min-max-pair-param (thunk (scale->pitch-range-pair (scale-param))))
 
 (define start-pitch-param (make-parameter (cons 'C '0va)))
 
@@ -251,3 +254,63 @@
 ;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3 4 2))
 ;; (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
 ;;
+
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+
+;; Next: experiment with octatonic scales and generators, forgetting about parameterization for now.
+;;
+;; Inner pattern generator takes scale and high and low pitches for range.
+;; Implement nested generators 
+;; 
+;; a) level 0 is random sequence of descending seconds and thirds, weighted toward seconds over the
+;;    span of two octaves with the starting pitch silent so you don't repeat from the same pitch
+;;    -- this is a new generator 
+;; b) level 1 is either/or filter that takes level 0 output and passes it along or replaces it with
+;;    #f to be intepreted later as a rest
+;;    -- this is weighted-list-or-f-generator-generator
+;; c) level 2 is either/or filter that takes level 1 output and replaces with 1..5 repetitions
+;;    randomly weighted toward 1
+;;    -- this is a new generator
+;;
+;; Outer generator keeps scale constant and progresses range and span from narrow/high to wide/low or reverse
+;;
+;; What is output from combined generators?  Note that generator-generator keeps calling inner-gen until it's
+;; done, then starts new inner-gen with next result from outer-gen.
+;;
+;; Just work through them one-by-one first.
+;;
+;; a) random sequence descending seconds and thirds
+;;    - inputs: weights, intervals, scale, pitch-range-pair/c
+;;    - output: pitch/c until 'done
+;;    - impl:   generate-while
+;;              * pred tests if (gen) is within range
+;;              * gen:
+;;                - inputs: weights, intervals, scale, pitch/c (high)
+;;                - state:  
+;;                    static:  buckets
+;;                    dynamic: previously-answered pitch/c
+;;                - impl:
+;;                    * pick bucket for random, interval for bucket
+;;                    * answer transposition of previous pitch with new interval
+;;                          
+(define/contract (generate-weighted-random-successive-intervals weights intervals scale pitch-range-pair)
+  (-> (listof exact-positive-integer?) (listof exact-integer?) Scale? pitch-range-pair/c generator?)
+  (let* ([buckets      (gen-buckets weights)]
+         [prev-pitch   (car pitch-range-pair)])
+    (generator ()
+       (let loop ()
+         (let* ([ix         (list-index (lambda (bucket) (<= (random) bucket)) buckets)]
+                [interval   (list-ref intervals ix)]
+                [next-pitch (xpose scale pitch-range-pair prev-pitch interval)])
+             (set! prev-pitch next-pitch)
+             (if next-pitch
+                 (begin
+                   (yield next-pitch)
+                   (loop))
+                 (void)))))))
+
+
+  

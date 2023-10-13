@@ -45,6 +45,8 @@
   ;; That is, weights (1 1 2) with inner generator that answers either 'a or 'b
   ;; means 25% chance for 'a, 25% for 'b, and 50% for #f.
   [weighted-list-or-f-generator-generator (-> (non-empty-listof exact-integer?) generator? generator?)]
+
+  [gen-buckets (-> (listof positive?) (listof positive?))]
   ))
 
 ;; - - - - - - - - -
@@ -122,7 +124,7 @@
   (unless (= (length weights) (length elements))
     (error 'weighted-random-list-element-generator "unequal lengths of weights ~v and elements ~v"
            (length weights) (length weights)))
-  (let ([buckets (gen-buckets (gen-fractions weights))])
+  (let ([buckets (gen-buckets weights)])
     (infinite-generator
      (let* ([r (random)]
             [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
@@ -130,15 +132,15 @@
 
 ;; (-> Scale? pitch/c exact-integer? generator?)
 (define (scale-steps-generator scale start-pitch interval)
-  (let* ([pitch-range (scale->PitchRangeMinMaxPair scale)]
-         [interval-adj (if (positive? interval) (sub1 interval) (add1 interval))]
-         [stop-pitch  (xpose scale pitch-range start-pitch interval-adj)])
+  (let* ([pitch-range-pr (scale->pitch-range-pair scale)]
+         [interval-adj   (if (positive? interval) (sub1 interval) (add1 interval))]
+         [stop-pitch     (xpose scale pitch-range-pr start-pitch interval-adj)])
     (sequence->generator (scale->pitch-range scale (cons start-pitch stop-pitch)))))
 
 ;; (-> Scale? pitch/c (listof exact-integer?) generator?)
 (define (scale-xpose-generator scale start-pitch intervals)
-  (let ([pitch-range (scale->PitchRangeMinMaxPair scale)])
-    (sequence->generator (transpose/absolute scale pitch-range start-pitch intervals))))
+  (let ([pitch-range-pr (scale->pitch-range-pair scale)])
+    (sequence->generator (transpose/absolute scale pitch-range-pr start-pitch intervals))))
 
 ;; ((-> any/c generator?) generator? generator?)
 (define (generator-generator gen-inner-gen outer-gen)
@@ -167,7 +169,7 @@
 ;; only two values in weights
 ;; (-> (non-empty-listof exact-integer?) generator? generator?)
 (define (weighted-list-or-f-generator-generator weights inner-gen)
-  (let ([buckets (gen-buckets (gen-fractions weights))])
+  (let ([buckets (gen-buckets weights)])
     (generator ()
       (let loop ()
         (let ([elements (append (list (inner-gen) (list #f)))])

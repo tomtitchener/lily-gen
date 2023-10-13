@@ -12,7 +12,7 @@
 (provide
  ;; Scale
  (struct-out Scale)
-
+ 
  ;; - - - - - - - - -
  ;; Scales 
  ;; all scales are instances of Scale
@@ -59,17 +59,17 @@
   [compare-pitches (-> (-> any/c any/c boolean?) pitch/c pitch/c boolean?)]
 
   ;; pitch-range-pair is inclusive
-  [pitch-in-range? (-> PitchRangeMinMaxPair? pitch/c maybe-pitch/c)]
+  [pitch-in-range? (-> pitch-range-pair/c pitch/c maybe-pitch/c)]
   
   ;; transpose up (positive) or down (negative) from (pitch-class . octave) pair by scale steps
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
   ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
-  [xpose (-> Scale? PitchRangeMinMaxPair? pitch/c exact-integer? maybe-pitch/c)]
+  [xpose (-> Scale? pitch-range-pair/c pitch/c exact-integer? maybe-pitch/c)]
  
   ;; transpose from the starting pitch using the list of integers to transpose
   ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
   [transpose/successive (-> Scale?
-                            PitchRangeMinMaxPair?
+                            pitch-range-pair/c
                             pitch/c
                             (or/c exact-integer? (listof exact-integer?))
                             (or/c maybe-pitch/c (listof maybe-pitch/c)))]
@@ -80,16 +80,16 @@
   ;; else for a list of exact-integer?, answer multiple pitch/c to transpose repeatedly from the
   ;; starting pitch, e.g. (1 2 3 ...) for a step-by-step progression
   [transpose/absolute (-> Scale?
-                          PitchRangeMinMaxPair?
+                          pitch-range-pair/c
                           pitch/c
                           (or/c exact-integer? (listof exact-integer?))
                           (or/c maybe-pitch/c (listof maybe-pitch/c)))]
-
+  
   ;; minimum and maximum pitches for a scale
-  [scale->PitchRangeMinMaxPair (-> Scale? PitchRangeMinMaxPair?)]
+  [scale->pitch-range-pair (-> Scale? pitch-range-pair/c)]
 
   ;; all pitches for a scale in ascending order
-  ;; - if optional PitchRangeMinMaxPair? then ascending or descending sub-range within all pitches for scale
+  ;; - if optional pitch-range-pair/c then ascending or descending sub-range within all pitches for scale
   ;; - if additional natural-number/c then in steps by value (default 1)
   [scale->pitch-range (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))]
 
@@ -97,7 +97,7 @@
   ;; for the number of generations in the first arg, answers generations each in its own list
   [transpose/iterate (-> natural-number/c
                          Scale?
-                         PitchRangeMinMaxPair?
+                         pitch-range-pair/c
                          pitch/c
                          exact-integer?
                          (listof exact-integer?)
@@ -364,69 +364,63 @@
 
 ;; pitch-range-pair is inclusive
 (define (pitch-in-range? pitch-range-pair pitch)
-  (let ([min-pitch (PitchRangeMinMaxPair-min pitch-range-pair)]
-        [max-pitch (PitchRangeMinMaxPair-max pitch-range-pair)])
-    (if (and (compare-pitches >= pitch min-pitch) (compare-pitches <= pitch max-pitch))
+  (let ([first-pitch (car pitch-range-pair)]
+        [second-pitch (cdr pitch-range-pair)])
+    (if (or
+         (and (compare-pitches >= pitch first-pitch) (compare-pitches <= pitch second-pitch))
+         (and (compare-pitches >= pitch second-pitch) (compare-pitches <= pitch first-pitch)))
         pitch
         #f)))
 
 (define pitch-range-pair/c
   (make-flat-contract #:name 'pitch-range-pair/c #:first-order (cons/c pitch/c pitch/c)))
 
-(define/contract (pitch-range-min-max-pair-ctor scale min max type-name)
-  (-> Scale? pitch/c pitch/c symbol? (values Scale? pitch/c pitch/c))
-  (when (compare-pitches >= min max)
-    (error 'PitchRangeMinMaxPair "min %v is not < max %v" min max))
-  (values scale min max))
-
-(struct PitchRangeMinMaxPair (scale min max) #:guard pitch-range-min-max-pair-ctor #:transparent)
-
 (define/contract (pitch-is-scale-member? scale pitch)
   (-> Scale? pitch/c boolean?)
   (if (memq (car pitch) (Scale-pitch-classes scale)) #t #f))
 
 (define/contract (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
-  (-> Scale? PitchRangeMinMaxPair? boolean?)
-  (and (pitch-is-scale-member? scale (PitchRangeMinMaxPair-min pitch-range-pair))
-       (pitch-is-scale-member? scale (PitchRangeMinMaxPair-max pitch-range-pair))))
+  (-> Scale? pitch-range-pair/c boolean?)
+  (and (pitch-is-scale-member? scale (car pitch-range-pair))
+       (pitch-is-scale-member? scale (cdr pitch-range-pair))))
 
 ;; guard xpose, transpose/successive, transpose/absolute inputs
 ;; scale, starting pitch and range to make sure all pitches are
 ;; members of scale
-(define/contract (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch)
-  (-> Scale? PitchRangeMinMaxPair? pitch/c boolean?)
-  (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-min-max-pair)
+(define/contract (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch)
+  (-> Scale? pitch-range-pair/c pitch/c boolean?)
+  (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
        (pitch-is-scale-member? scale pitch)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c exact-integer? maybe-pitch/c)
-(define (xpose scale pitch-range-min-max-pair pitch interval)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
-    (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
-  (xpose/internal scale pitch pitch-range-min-max-pair interval))
+;; (-> Scale? pitch-range-pair/c pitch/c exact-integer? maybe-pitch/c)
+(define (xpose scale pitch-range-pair pitch interval)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
+  (xpose/internal scale pitch pitch-range-pair interval))
 
-;; pitch and pitch-range-min-max-pair already guarded, so
+;; pitch and pitch-range-pair already guarded, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
-(define/contract (xpose/internal scale pitch pitch-range-min-max-pair interval)
-  (-> Scale? pitch/c PitchRangeMinMaxPair? exact-integer? maybe-pitch/c)
+(define/contract (xpose/internal scale pitch pitch-range-pair interval)
+  (-> Scale? pitch/c pitch-range-pair/c exact-integer? maybe-pitch/c)
   (let* ([pitch-idx (pitch->index scale pitch)]
          [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
-    (pitch-in-range? pitch-range-min-max-pair xposed-pitch)))
+    (pitch-in-range? pitch-range-pair xposed-pitch)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/successive scale pitch-range-min-max-pair pitch interval/intervals)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
-    (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
+;; (-> Scale? pitch-range-pair/c pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/successive scale pitch-range-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
   (if (list? interval/intervals)
-      (map (lambda (interval) (xpose/internal scale pitch pitch-range-min-max-pair interval)) (scanl + interval/intervals))
-      (xpose/internal scale pitch pitch-range-min-max-pair interval/intervals)))
+      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) (scanl + interval/intervals))
+      (xpose/internal scale pitch pitch-range-pair interval/intervals)))
 
-;; (-> Scale? PitchRangeMinMaxPair? pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/absolute scale pitch-range-min-max-pair pitch interval/intervals)
-  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-min-max-pair pitch))
-    (error 'transpose/absolute "pitch-range-min-max-pair ~v or pitch ~v are not members of scale ~v" pitch-range-min-max-pair pitch scale))
+;; (-> Scale? pitch-range-pair/c pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/absolute scale pitch-range-pair pitch interval/intervals)
+  (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
+    (error 'transpose/absolute "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
   (if (list? interval/intervals)
-      (map (lambda (interval) (xpose/internal scale pitch pitch-range-min-max-pair interval)) interval/intervals)
-      (xpose/internal scale pitch pitch-range-min-max-pair interval/intervals)))
+      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) interval/intervals)
+      (xpose/internal scale pitch pitch-range-pair interval/intervals)))
 
 ;; the max index for a list of pitches for the scale
 ;; starting from 0 to the final index, inclusive
@@ -440,9 +434,9 @@
     (sub1 (* cnt-octs cnt-pcs))))
 
 ;; full pitch range for scale is [0..(scale->max-idx scale)] inclusive
-;; (-> Scale? PitchRangeMinMaxPair?)
-(define (scale->PitchRangeMinMaxPair scale)
-  (PitchRangeMinMaxPair scale (index->pitch scale 0) (index->pitch scale (scale->max-idx scale))))
+;; (-> Scale? pitch-range-pair/c)
+(define (scale->pitch-range-pair scale)
+  (cons (index->pitch scale 0) (index->pitch scale (scale->max-idx scale))))
 
 (define/contract (scale->all-pitches scale)
   (-> Scale? (listof pitch/c))
@@ -453,7 +447,7 @@
 ;; (->* (Scale?) (pitch-range-pair/c natural-number/c) (listof pitch/c))
 (define (scale->pitch-range scale [pitch-range-pair-or-f #f] [step 1])
   (let ([all-pitches (scale->all-pitches scale)]
-        [pitch-range-pair (if pitch-range-pair-or-f pitch-range-pair-or-f (scale->PitchRangeMinMaxPair scale))])
+        [pitch-range-pair (if pitch-range-pair-or-f pitch-range-pair-or-f (scale->pitch-range-pair scale))])
     (let ([start-idx (list-index ((curry equal?) (car pitch-range-pair)) all-pitches)]
           [stop-idx  (list-index ((curry equal?) (cdr pitch-range-pair)) all-pitches)])
       (when (= start-idx stop-idx)
@@ -474,7 +468,7 @@
 (module+ test
   (require rackunit)
   (check-equal?
-   (transpose/successive C-major (scale->PitchRangeMinMaxPair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
+   (transpose/successive C-major (scale->pitch-range-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))
   (check-exn exn:fail? (lambda () (xpose C-major (cons 'C '0va) 1000)))
   (for-each (lambda (sc)
@@ -486,18 +480,18 @@
 ;; Returned (listof (listof maybe-pitch/c)) is by generation (0 1 2 ..)
 ;;(-> natural-number/c
 ;;    Scale?
-;;    PitchRangeMinMaxPair?
+;;    pitch-range-pair/c
 ;;    pitch/c exact-integer?
 ;;    (listof exact-integer?)
 ;;    (listof exact-integer?)
 ;;    (listof (listof maybe-pitch/c)))
-(define (transpose/iterate generations scale pitch-range-min-max-pair start-pitch offset kernel-intervals init-intervals)
+(define (transpose/iterate generations scale pitch-range-pair start-pitch offset kernel-intervals init-intervals)
   (let ([self-sim-indexess (iterate-list-comprehension-sum generations offset kernel-intervals init-intervals)])
-    (map (curry transpose/absolute scale pitch-range-min-max-pair start-pitch) self-sim-indexess)))
+    (map (curry transpose/absolute scale pitch-range-pair start-pitch) self-sim-indexess)))
         
 (module+ test
   (require rackunit)
   
   (check-equal?
-   (second (transpose/iterate 3 C-major (scale->PitchRangeMinMaxPair C-major) (cons 'C '0va) 0 '(0 5 2) '(1 2 3)))
+   (second (transpose/iterate 3 C-major (scale->pitch-range-pair C-major) (cons 'C '0va) 0 '(0 5 2) '(1 2 3)))
    '((D . 0va) (E . 0va) (F . 0va) (B . 0va) (C . 8va) (D . 8va) (F . 0va) (G . 0va) (A . 0va))))
