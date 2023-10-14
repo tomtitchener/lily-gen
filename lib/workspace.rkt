@@ -5,9 +5,10 @@
 ;; nothing to provide, this is a stub
 
 (require (only-in seq iterate take))
+(require (only-in algorithms repeat))
 (require (only-in srfi/1 list-index))
-(require racket/generator)
 
+(require lily-gen/lib/utils)
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
 (require lily-gen/lib/scale)
@@ -267,12 +268,37 @@
 ;; 
 ;; a) level 0 is random sequence of descending seconds and thirds, weighted toward seconds over the
 ;;    span of two octaves with the starting pitch silent so you don't repeat from the same pitch
-;;    -- this is a new generator 
-;; b) level 1 is either/or filter that takes level 0 output and passes it along or replaces it with
+;;    -- this is a new generator:  weighted-intervals-generator
+;; b) level 1 is map that takes level 0 output and passes it along or replaces it with val or
 ;;    #f to be intepreted later as a rest
+;;    -- this is weighted-maybe-generator
 ;; c) level 2 is either/or filter that takes level 1 output and replaces with 1..5 repetitions
 ;;    randomly weighted toward 1
-;;    -- a pipeline state so it can be synchronous
+;;    -- this is weighted-repeats-generator
+;;
+;; problem is that with stacked generators I'll get repeats of #f which is not what I want, or is it?
+;; 
+;; generators.rkt> (define ig (sequence->generator '(1 2 3 4 5 6 7 8 9)))
+;; generators.rkt> (define mg (weighted-maybe-generator '(1 1) ig))
+;; generators.rkt> (define og (weighted-repeats-generator '(1 1 1) '(1 2 3)) mg)
+;; generators.rkt> (og)
+;; '(#f #f #f)
+;; generators.rkt> (og)
+;; '(#f #f #f)
+;; generators.rkt> (og)
+;; '(3 3 3)
+;; generators.rkt> (og)
+;; '(#f #f)
+;; generators.rkt> (og)
+;; '(#f #f)
+;; generators.rkt> (og)
+;; '(6 6 6)
+;; generators.rkt> (og)
+;; '(7 7)
+;; generators.rkt> (og)
+;; '(#f #f)
+;; generators.rkt> (og)
+;; '(9 9)
 ;;
 ;; Outer generator keeps scale constant and progresses range and span from narrow/high to wide/low or reverse
 ;;
@@ -298,3 +324,42 @@
 ;; see weighted-list-intervals-generator, this is level 0
 ;;
 ;; 
+(define C-whole-oct (octatonic-whole-scale 'C))
+;;
+(define ints-g (weighted-intervals-generator '(5 1) '(-1 -2) C-whole-oct (cons (cons 'C '22va) (cons 'C '22vb))))
+;;
+(define may-g (weighted-maybe-generator '(2 1) ints-g))
+;;
+(define reps-g (weighted-repeats-generator '(15 5 1) '(1 2 3) may-g))
+;;
+;; (generate-while (const #t) reps-g)
+;;
+;; experimental mapping from (non-empty-listof (or/c #f pitch/c)) -> (non-empty-listof (or/c Rest? Note?))
+;; - #f -> Rest
+;; - pitch/c -> Note
+;; question is duration and (for Note) accent
+;; - for list of Note, pick a duration, more elements -> shorter the duration, pick randomly from list
+;;   for different lengths
+;; - do the same for list of Rest
+;;
+;; might as well be a generator-map with function
+;; (-> (non-empty-listof (or/c #f pitch/c)) (non-empty-listof (or/c Rest? Note?)))
+;; that takes weights and durations lists
+(define/contract (fs-or-pitches->rests-or-notes weights durations)
+  (-> (non-empty-listof exact-positive-integer?) ;; weights
+      (non-empty-listof duration?) ;; durations, must be same lengths
+      (-> (non-empty-listof (or/c #f pitch/c)) (non-empty-listof (or/c Rest? Note?))))
+  (unless (= (length weights) (length durations))
+    (error 'fs-or-pitches->rests-or-notes "unequal lengths of weights ~v and durations ~v" weights durations))
+  (let* ([buckets (gen-buckets weights)])
+    (lambda (fs-or-pitches)
+     (let* ([r (random)]
+            [ix (list-index (lambda (bucket) (<= r bucket)) buckets)]
+            [dur (list-ref durations ix)])
+      (match (car fs-or-pitches)
+        [#f
+         (repeat (length fs-or-pitches) (Rest dur))]
+        [(cons p o)
+         (repeat (length fs-or-pitches) (Note p o dur '() #f))])))))
+;;
+(define ves-g (generator-map (fs-or-pitches->rests-or-notes '(8 2 1) '(S E Q)) reps-g))

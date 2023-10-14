@@ -15,7 +15,13 @@
   [sum<=? (-> (-> any/c natural-number/c) natural-number/c (-> any/c boolean?))]
 
   ;; group by sequential values that match a boolean predicate 
-  [group-by-adjacent-sequences (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))]))
+  [group-by-adjacent-sequences (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))]
+
+  ;; (gen-buckets '(1 1 4)) -> '(1/6 1/3 1)
+  [gen-buckets (-> (non-empty-listof exact-positive-integer?) (non-empty-listof positive?))]
+  ))
+
+(require (only-in algorithms scanl))
 
 ;; - - - - - - - - -
 ;; implementation
@@ -28,6 +34,29 @@
     (if (< cnt 0)
         (append (drop lst (- l c)) (take lst (- l c)))
         (append (drop lst c) (take lst c)))))
+
+;;generators.rkt> (ez-weighted-random-list-element '(1 1 1))
+;; '(1/3 1/3 1/3)
+;; generators.rkt> (ez-weighted-random-list-element '(1 1 4))
+;; '(1/6 1/6 2/3)
+(define (gen-fractions ws) ;; (w)eight(s) 
+  (let ([tot (apply + ws)])
+    (map (lambda (w) (/ w tot)) ws)))
+
+;; (-> (non-empty-listof exact-positive-integer?) (non-empty-listof positive?))
+(define (gen-buckets ws) ;; (w)eight(s)
+  (scanl + (gen-fractions ws)))
+
+(module+ test
+  (require rackcheck)
+  (check-property
+   (property ([nats (gen:list (gen:integer-in 1 100))])
+             ;; can't ask gen:list for a minimum number of elements, need at least two
+             (let* ([weights (cond [(null? nats) '(1 1)]
+                                   [(= 1 (length nats)) (cons 1 nats)]
+                                   [else nats])]
+                    [ix (list-index (lambda (bucket) (<= (random) bucket)) (gen-buckets weights))])
+               (and (check >= ix 0) (check <= ix (sub1 (length weights))))))))
 
 (module+ test
   (require rackunit)
