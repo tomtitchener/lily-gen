@@ -14,22 +14,27 @@
   ;; state becomes 'done, nested generators are pitch-or-f, duration, accent-or-f
   [note-or-rest-generator (-> generator? generator? generator? generator?)]
  
-  ;; generate until predicate fails or generator-state is done
-  [generate-while (-> predicate/c generator? (listof any/c))]
-
-  ;; generate num-denom pair(s) from time-signature
+  ;; inifinite generate of num-denom pair(s) from time-signature
   [time-signature->num-denom-generator (-> time-signature/c generator?)]
 
-  ;; generate random pick from listof any/c based on weights,
-  ;; e.g. weights (1 1 1) -> (1/3 1/3 1/3), (1 1 2) -> (1/4 1/4 1/2), etc.
+  ;; infinite generator of random pick from listof any/c based on weights,
+  ;; lengths of weights and lengths of elements must be the same
   [weighted-list-element-generator (-> (non-empty-listof exact-positive-integer?) (non-empty-listof any/c) generator?)]
 
-  ;; generate step-wise list of pitch/c given Scale?
-  ;; exact-integer? as interval as count of steps, with start on start-pitch
-  ;; and end as interval -/+ 1 (up/down) to generate interval count of steps
+  ;; generate intervals from start to stop in pitch-range-pair/c in scale
+  ;; given weights as listof exact-positive-integer? and intervals as listof integer?
+  [weighted-intervals-generator
+   (-> (listof exact-positive-integer?) (listof exact-integer?) Scale? pitch-range-pair/c generator?)]
+  
+  ;;[weighted-repetitions-generator
+  ;;(-> (listof exact-positive-integer?) (listof exact-positive-integer?) pitch/c generator?)]
+  
+  ;; sequence generator for step-wise list of pitch/c given
+  ;; Scale?, start-pitch and exact-integer? as step count, 
+  ;; positive for ascending, negative for descending
   [scale-steps-generator (-> Scale? pitch/c exact-integer? generator?)]
 
-  ;; (-> Scale? pitch/c (listof exact-integer?) generator?)
+  ;; sequence generator for transpose/absolute of scale, pitch, integer list
   [scale-xpose-generator (-> Scale? pitch/c (listof exact-integer?) generator?)]
 
   ;; given a way to initialize an inner generator from the output of an
@@ -39,14 +44,18 @@
   ;; generator
   [generator-generator (-> (-> any/c generator?) generator? generator?)]
 
-  ;; Wrap inner generator with random selection of elements including #f
-  ;; based on input weights.  Length of weights must equal length of elements
-  ;; answered by (inner-gen) + 1 for #f as last weight in list is weight for #f.
-  ;; That is, weights (1 1 2) with inner generator that answers either 'a or 'b
-  ;; means 25% chance for 'a, 25% for 'b, and 50% for #f.
+  ;; choose one of (inner-gen) or '(#f) based on weights, length of 
+  ;; weights must equal length of (inner-gen) + 1 (for #f)
+  ;; weights (1 1 2) with inner generator that answers either 'a or 'b
+  ;; means 25% chance for 'a, 25% for 'b, and 50% for #f
   [weighted-list-or-f-generator-generator (-> (non-empty-listof exact-integer?) generator? generator?)]
 
-  [gen-buckets (-> (listof positive?) (listof positive?))]
+  ;; generate until predicate fails or generator-state is done,
+  ;; supply (const #t) as predicate to collect all output as a list
+  [generate-while (-> predicate/c generator? (listof any/c))]
+
+  ;; answer generator that applies function to all generator results, arities must match
+  [generator-map (-> (-> any/c any/c) generator? generator?)]
   ))
 
 ;; - - - - - - - - -
@@ -114,9 +123,9 @@
   (let ([tot (apply + ws)])
     (map (lambda (w) (/ w tot)) ws)))
 
-;; generators.rkt> (gen-buckets (gen-fractions '(1 1 4)))
-;; '(1/6 1/3 1)
-(define (gen-buckets ws) ;; (w)eight(s)
+;; (gen-buckets '(1 1 4)) -> '(1/6 1/3 1)
+(define/contract (gen-buckets ws) ;; (w)eight(s)
+  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof positive?))
   (scanl + (gen-fractions ws)))
 
 ;; (-> (non-empty-listof exact-positive-integer?) (non-empty-listof any/c) generator?)
@@ -129,6 +138,21 @@
      (let* ([r (random)]
             [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
        (yield (list-ref elements ix))))))
+
+(define (weighted-intervals-generator weights intervals scale pitch-range-pair)
+  (let* ([buckets      (gen-buckets weights)]
+         [prev-pitch   (car pitch-range-pair)])
+    (generator ()
+       (let loop ()
+         (let* ([ix         (list-index (lambda (bucket) (<= (random) bucket)) buckets)]
+                [interval   (list-ref intervals ix)]
+                [next-pitch (xpose scale pitch-range-pair prev-pitch interval)])
+             (set! prev-pitch next-pitch)
+             (if next-pitch
+                 (begin
+                   (yield next-pitch)
+                   (loop))
+                 (void)))))))
 
 ;; (-> Scale? pitch/c exact-integer? generator?)
 (define (scale-steps-generator scale start-pitch interval)
@@ -164,28 +188,18 @@
                (yield next-inner-element))
              (loop))])))))
 
-;; chooses one of (append (inner-gen) '(#f)) based on weights
-;; alternative: choose either all of (inner-gen) or #f, with
-;; only two values in weights
-;; (-> (non-empty-listof exact-integer?) generator? generator?)
-(define (weighted-list-or-f-generator-generator weights inner-gen)
+(define/contract (random-or-f-fun weights)
+  (-> (non-empty-listof exact-positive-integer?) (-> any/c any/c))
   (let ([buckets (gen-buckets weights)])
-    (generator ()
-      (let loop ()
-        (let ([elements (append (list (inner-gen) (list #f)))])
-          (cond [(symbol=? 'done (generator-state inner-gen))
-                 (void)]
-                [else
-                 ;; cannot know ahead of time if length of weights 
-                 ;; matches 1 + (length (inner-gen))
-                 (unless (eq? (length elements) (length weights))
-                   (error 'weighted-list-or-f-generator-generator
-                          "length elements ~v is different from length weights ~v"
-                          (length elements) (length weights)))
-                 (let* ([r (random)]
-                        [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
-                   (yield (list-ref elements ix))
-                   (loop))]))))))
+    (lambda (val)
+      (let* ([r  (random)]
+             [ix (list-index (lambda (bucket) (<= r bucket)) buckets)]
+             [sp (if (list? val) identity list)])
+        (list-ref (append (sp val) (list #f)) ix)))))
+
+;; (-> (non-empty-listof exact-integer?) generator? generator?)
+(define (weighted-list-or-f-generator-generator weights gen)
+  (generator-map (random-or-f-fun weights) gen))
 
 ;; (-> predicate/c generator? (listof any/c))
 (define (generate-while pred gen)
@@ -194,6 +208,17 @@
       (cond [(eq? 'done (generator-state gen)) '()]
             [(pred next) (cons next (loop))]
             [else '()]))))
+
+;; (-> (-> any/c any/c) generator? generator?)
+(define (generator-map fun gen)
+  (generator ()
+    (let loop ()
+      (let ([val (gen)])
+        (if (symbol=? 'done (generator-state gen))
+            (void)
+            (begin
+              (yield (fun val))
+              (loop)))))))
 
 (module+ test
   (require rackunit)
@@ -298,15 +323,17 @@
                     (B . 0va))))
   (let* ([inner (scale-steps-generator C-major (cons 'C '8va) -3)]
          [outer (weighted-list-or-f-generator-generator '(1 1) inner)])
-    (check-equal? (length (generate-while identity outer)) 3))
+    (check-equal? (length (generate-while (const #t) outer)) 3))
+  ;; generator-map works with generator that answers a list as well as a val
+  (let* ([inner (sequence->generator '((1 2 3) (4 5 6)))]
+         [outer (generator-map (lambda (l) (cdr l)) inner)])
+    (check-equal? (generate-while (const #t) outer) '((2 3) (5 6))))
   (check-property
-   (property ([nats (gen:list gen:natural)])
+   (property ([nats (gen:list (gen:integer-in 1 100))])
              ;; can't ask gen:list for a minimum number of elements, need at least two
-             (let* ([weights (if (null? nats)
-                                 '(1 1)
-                                 (if (= 1 (length nats))
-                                     (cons 1 nats)
-                                     nats))]
+             (let* ([weights (cond [(null? nats) '(1 1)]
+                                   [(= 1 (length nats)) (cons 1 nats)]
+                                   [else nats])]
                     [ix (list-index (lambda (bucket) (<= (random) bucket)) (gen-buckets weights))])
                (and (check >= ix 0) (check <= ix (sub1 (length weights)))))))
   )

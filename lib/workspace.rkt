@@ -270,10 +270,9 @@
 ;;    -- this is a new generator 
 ;; b) level 1 is either/or filter that takes level 0 output and passes it along or replaces it with
 ;;    #f to be intepreted later as a rest
-;;    -- this is weighted-list-or-f-generator-generator
 ;; c) level 2 is either/or filter that takes level 1 output and replaces with 1..5 repetitions
 ;;    randomly weighted toward 1
-;;    -- this is a new generator
+;;    -- a pipeline state so it can be synchronous
 ;;
 ;; Outer generator keeps scale constant and progresses range and span from narrow/high to wide/low or reverse
 ;;
@@ -296,21 +295,6 @@
 ;;                    * pick bucket for random, interval for bucket
 ;;                    * answer transposition of previous pitch with new interval
 ;;                          
-(define/contract (generate-weighted-random-successive-intervals weights intervals scale pitch-range-pair)
-  (-> (listof exact-positive-integer?) (listof exact-integer?) Scale? pitch-range-pair/c generator?)
-  (let* ([buckets      (gen-buckets weights)]
-         [prev-pitch   (car pitch-range-pair)])
-    (generator ()
-       (let loop ()
-         (let* ([ix         (list-index (lambda (bucket) (<= (random) bucket)) buckets)]
-                [interval   (list-ref intervals ix)]
-                [next-pitch (xpose scale pitch-range-pair prev-pitch interval)])
-             (set! prev-pitch next-pitch)
-             (if next-pitch
-                 (begin
-                   (yield next-pitch)
-                   (loop))
-                 (void)))))))
-
-
-  
+;; see weighted-list-intervals-generator, this is level 0
+;;
+;; 
