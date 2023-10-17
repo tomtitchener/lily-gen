@@ -109,6 +109,8 @@
 ;; implementation
 (require (only-in seq find))
 
+(require (only-in racket/set set=?))
+
 (require (only-in racket/provide matching-identifiers-out))
 
 (require (only-in algorithms scanl))
@@ -320,7 +322,13 @@
 (define (scale->key-signature-values scale)
   (cond
     ;; no key signature for any of C-major, whole-tone or chromatic scales
-    [(or (equal? scale C-major) (equal? scale C-whole-tone) (equal? scale Df-whole-tone) (equal? scale chromatic-sharps) (equal? scale chromatic-flats))
+    [(or (equal? scale C-major)
+         (equal? scale C-whole-tone)
+         (equal? scale Df-whole-tone)
+         (equal? scale chromatic-sharps)
+         (equal? scale chromatic-flats)
+         (member (Scale-pitch-classes scale) octatonic-whole-pitch-classes-list set=?)
+         (member (Scale-pitch-classes scale) octatonic-half-pitch-classes-list set=?))
      (values 'C 'Major)]
     [else
      ;; make sure order of pitches in scale hasn't been re-arranged to match octaves so tonic isn't first in list of pitches
@@ -403,8 +411,11 @@
 (define/contract (xpose/internal scale pitch pitch-range-pair interval)
   (-> Scale? pitch/c pitch-range-pair/c exact-integer? maybe-pitch/c)
   (let* ([pitch-idx (pitch->index scale pitch)]
-         [xposed-pitch (index->pitch scale (+ pitch-idx interval))])
-    (pitch-in-range? pitch-range-pair xposed-pitch)))
+         [pitch-off (+ pitch-idx interval)])
+    (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
+      #f
+      (let ([xposed-pitch (index->pitch scale (+ pitch-idx interval))])
+        (pitch-in-range? pitch-range-pair xposed-pitch)))))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
 (define (transpose/successive scale pitch-range-pair pitch interval/intervals)

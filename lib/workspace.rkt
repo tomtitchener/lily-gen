@@ -4,11 +4,14 @@
 
 ;; nothing to provide, this is a stub
 
+(require racket/generator)
+
 (require (only-in seq iterate take))
 (require (only-in algorithms repeat))
 (require (only-in srfi/1 list-index))
 
 (require lily-gen/lib/utils)
+(require lily-gen/lib/meter)
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
 (require lily-gen/lib/scale)
@@ -247,7 +250,7 @@
 ;; what about a 2x rhythmic ratio between voices via a kernel and a long inits:
 ;;
 ;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3))
-;; (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
+;;  (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
 ;;
 ;; gets you a frozen-while-flying or stroboscopic effect with each voice going 2x faster than next voice, 
 ;; a simultaneous slo-mo
@@ -363,3 +366,91 @@
          (repeat (length fs-or-pitches) (Note p o dur '() #f))])))))
 ;;
 (define ves-g (generator-map (fs-or-pitches->rests-or-notes '(8 2 1) '(S E Q)) reps-g))
+
+;; inputs:
+;; - intervals:    weights, intervals, start, stop
+;; - maybes:       weights for (val) vs. #f
+;; - repetitions:  weights, repetitions
+;; - durations:    weights, durations
+;;
+;; between voices:
+;; - constant:  intervals, but with different generators for each voice
+;;              maybes, ditto
+;; - varied:    repeats, with most in highest voice, fewest in lowest voice
+;;              durations, shortest in high voice, slowest in owest voice
+;;
+;; do it direct, forget parameterization for now
+;; 
+(define/contract (gen-ints weights intervals pitch-range)
+  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?) pitch-range-pair/c generator?)
+  (weighted-intervals-generator weights intervals C-whole-oct pitch-range))
+
+(define/contract (gen-maybes weights gen)
+  (-> (non-empty-listof exact-positive-integer?) generator? generator?)
+  (weighted-maybe-generator weights gen))
+
+(define/contract (gen-repeats weights repeats gen)
+  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof exact-positive-integer?) generator? generator?)
+  (weighted-repeats-generator weights repeats gen))
+
+(define/contract (gen-rests-or-notes weights durations gen)
+  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof duration?) generator? generator?)
+  (generator-map (fs-or-pitches->rests-or-notes weights durations) gen))
+
+(define/contract (gen-voice-events weights-intervals-pr pitch-range weights-maybes weights-repeats-pr weights-durations-pr)
+  (-> (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?))
+      pitch-range-pair/c
+      (non-empty-listof exact-positive-integer?)
+      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-positive-integer?))
+      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof duration?))
+      generator?)
+  (let* ([ints-gen (gen-ints (car weights-intervals-pr) (cdr weights-intervals-pr) pitch-range)]
+         [maybes-gen (gen-maybes weights-maybes ints-gen)]
+         [repeats-gen (gen-repeats (car weights-repeats-pr) (cdr weights-repeats-pr) maybes-gen)])
+    (gen-rests-or-notes (car weights-durations-pr) (cdr weights-durations-pr) repeats-gen)))
+
+;; this is a hack just to get something to work, which it does, including making the score prettier
+;; re-structure so voices move fast, medium, slow - means shorter vs. longer durs, wider vs. narrower
+;; ranges, shorter vs. wider steps - also globally need fewer rests, 2:1
+;; - make all data configurable via callbacks, organize per-voice so callback for voice gives list
+;;   of data:
+;;   * instrument
+;;   * pitch-range
+;;   * weights&intervals
+;;   * weights/rests
+;;   * weights&repeats
+;;   * weights&durations
+;; - use callbacks for standard data
+;;   * time-signature
+;;   * tempo
+;;   * title
+;;   * copyright
+;; - make global param for e.g. number of repeats for voices
+;; 
+(define (gen-descending-voices-score)
+  (let* ([output-file-name (string-append "test/" "test" ".ly")]
+         [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
+    (let ([weights-intervals-pr (cons '(5 1) '(-1 -2))]
+          [weights-maybes '(5 1)]
+          [weights-repeats-pr (cons '(15 5 1) '(1 2 3))]
+          [high-pitch-range  (cons (cons 'C '15va) (cons 'C '0va))]
+          [mid-pitch-range   (cons (cons 'Fs '8va) (cons 'Fs '8vb))]
+          [low-pitch-range   (cons (cons 'C '0va) (cons 'C '15vb))]
+          [high-weights-durations-pr (cons '(8 2 1) '(S E Q))]
+          [mid-weights-durations-pr  (cons '(8 2 1) '(S E Q))]
+          [low-weights-durations-pr  (cons '(8 2 1) '(S E Q))])
+      (let ([hi-voice-gen  (gen-voice-events weights-intervals-pr high-pitch-range weights-maybes weights-repeats-pr high-weights-durations-pr)]
+            [mid-voice-gen (gen-voice-events weights-intervals-pr mid-pitch-range  weights-maybes weights-repeats-pr mid-weights-durations-pr)]
+            [low-voice-gen (gen-voice-events weights-intervals-pr low-pitch-range  weights-maybes weights-repeats-pr low-weights-durations-pr)])
+        (let ([hi-voice-events (apply append (generate-while (const #t) hi-voice-gen))]
+              [mid-voice-events (apply append (generate-while (const #t) mid-voice-gen))]
+              [low-voice-events (apply append (generate-while (const #t) low-voice-gen))])
+          (let ([hi-voice (SplitStaffVoice 'AcousticGrand hi-voice-events)]
+                [mid-voice (SplitStaffVoice 'AcousticGrand mid-voice-events)]
+                [low-voice (SplitStaffVoice 'AcousticGrand low-voice-events)])
+            (let* ([voices-group (VoicesGroup (TempoDur 'Q 60) (TimeSignatureSimple 4 'Q) (list hi-voice mid-voice low-voice))]
+                   [score (Score "workspace" "copyright" (list (extend&align-voices-group-durations voices-group)))])
+              (display (score->lily score) output-port)
+              (close-output-port output-port)
+              (system (format "lilypond -s -o test ~v" output-file-name)))))))))
+

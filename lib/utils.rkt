@@ -19,6 +19,12 @@
 
   ;; (gen-buckets '(1 1 4)) -> '(1/6 1/3 1)
   [gen-buckets (-> (non-empty-listof exact-positive-integer?) (non-empty-listof positive?))]
+ 
+  ;; '() -> '()
+  ;; '(1) -> '()
+  ;; '(1 2 3) -> '((1 2) (2 3))
+  ;; '(1 2 3 4) -> '((1 2) (2 3) (3 4))
+  [list->pairs (-> (listof any/c) (listof (cons/c any/c any/c)))]
   ))
 
 (require (only-in algorithms scanl))
@@ -129,4 +135,10 @@
    (group-by-adjacent-sequences p '(1 1 2 4 3 7 8 9 4 4 6 10 11 20 30))
    '((1) (1) (2 4) (3) (7) (8) (9) (4 4 6 10) (11) (20 30))))
 
+(define (list->pairs l)
+  (if (or (null? l) (null? (cdr l)))
+      '()
+      (let ([t (cdr l)])
+        (cons (cons (car l) (car t)) (list->pairs t)))))
 
+  
