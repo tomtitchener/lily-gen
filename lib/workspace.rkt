@@ -2,7 +2,7 @@
 
 ;; workspace.rkt:  experiment with routines
 
-;; nothing to provide, this is a stub
+;; nothing to provide, this is a stub to play with using the repl
 
 (require racket/generator)
 
@@ -364,7 +364,7 @@
          (repeat (length fs-or-pitches) (Rest dur))]
         [(cons p o)
          (repeat (length fs-or-pitches) (Note p o dur '() #f))])))))
-;;
+
 (define ves-g (generator-map (fs-or-pitches->rests-or-notes '(8 2 1) '(S E Q)) reps-g))
 
 ;; inputs:
@@ -409,48 +409,109 @@
          [repeats-gen (gen-repeats (car weights-repeats-pr) (cdr weights-repeats-pr) maybes-gen)])
     (gen-rests-or-notes (car weights-durations-pr) (cdr weights-durations-pr) repeats-gen)))
 
-;; this is a hack just to get something to work, which it does, including making the score prettier
-;; re-structure so voices move fast, medium, slow - means shorter vs. longer durs, wider vs. narrower
-;; ranges, shorter vs. wider steps - also globally need fewer rests, 2:1
-;; - make all data configurable via callbacks, organize per-voice so callback for voice gives list
-;;   of data:
-;;   * instrument
-;;   * pitch-range
-;;   * weights&intervals
-;;   * weights/rests
-;;   * weights&repeats
-;;   * weights&durations
-;; - use callbacks for standard data
-;;   * time-signature
-;;   * tempo
-;;   * title
-;;   * copyright
-;; - make global param for e.g. number of repeats for voices
-;; 
-(define (gen-descending-voices-score)
-  (let* ([output-file-name (string-append "test/" "test" ".ly")]
-         [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
-    (let ([weights-intervals-pr (cons '(5 1) '(-1 -2))]
-          [weights-maybes '(5 1)]
-          [weights-repeats-pr (cons '(15 5 1) '(1 2 3))]
-          [high-pitch-range  (cons (cons 'C '15va) (cons 'C '0va))]
-          [mid-pitch-range   (cons (cons 'Fs '8va) (cons 'Fs '8vb))]
-          [low-pitch-range   (cons (cons 'C '0va) (cons 'C '15vb))]
-          [high-weights-durations-pr (cons '(8 2 1) '(S E Q))]
-          [mid-weights-durations-pr  (cons '(8 2 1) '(S E Q))]
-          [low-weights-durations-pr  (cons '(8 2 1) '(S E Q))])
-      (let ([hi-voice-gen  (gen-voice-events weights-intervals-pr high-pitch-range weights-maybes weights-repeats-pr high-weights-durations-pr)]
-            [mid-voice-gen (gen-voice-events weights-intervals-pr mid-pitch-range  weights-maybes weights-repeats-pr mid-weights-durations-pr)]
-            [low-voice-gen (gen-voice-events weights-intervals-pr low-pitch-range  weights-maybes weights-repeats-pr low-weights-durations-pr)])
-        (let ([hi-voice-events (apply append (generate-while (const #t) hi-voice-gen))]
-              [mid-voice-events (apply append (generate-while (const #t) mid-voice-gen))]
-              [low-voice-events (apply append (generate-while (const #t) low-voice-gen))])
-          (let ([hi-voice (SplitStaffVoice 'AcousticGrand hi-voice-events)]
-                [mid-voice (SplitStaffVoice 'AcousticGrand mid-voice-events)]
-                [low-voice (SplitStaffVoice 'AcousticGrand low-voice-events)])
-            (let* ([voices-group (VoicesGroup (TempoDur 'Q 60) (TimeSignatureSimple 4 'Q) (list hi-voice mid-voice low-voice))]
-                   [score (Score "workspace" "copyright" (list (extend&align-voices-group-durations voices-group)))])
-              (display (score->lily score) output-port)
-              (close-output-port output-port)
-              (system (format "lilypond -s -o test ~v" output-file-name)))))))))
+(define weights/c 
+  (make-flat-contract #:name 'weights/c #:first-order (non-empty-listof exact-positive-integer?)))
+
+(define intervals/c 
+  (make-flat-contract #:name 'intervals/c #:first-order (non-empty-listof exact-integer?)))
+
+(define repeats/c 
+  (make-flat-contract #:name 'repeats/c #:first-order (non-empty-listof exact-positive-integer?)))
+
+(define durations/c 
+  (make-flat-contract #:name 'durations/c #:first-order (non-empty-listof duration?)))
+
+(define weights&intervals/c
+  (make-flat-contract #:name 'weights&intervals/c #:first-order (cons/c weights/c intervals/c)))
+
+(define weights&repeats/c
+  (make-flat-contract #:name 'weights&repeats/c #:first-order (cons/c weights/c repeats/c)))
+
+(define weights&durations/c
+  (make-flat-contract #:name 'weights&durations/c #:first-order (cons/c weights/c durations/c)))
+
+(define piano/param (make-parameter 'AcousticGrand))
+
+(define high-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '0va))))
+
+(define mid-pitch-range/param (make-parameter (cons (cons 'Fs '8va) (cons 'Fs '8vb))))
+
+(define low-pitch-range/param (make-parameter (cons (cons 'C '0va) (cons 'C '15vb))))
+
+(define descending-weights&intervals/param (make-parameter (cons '(5 1) '(-1 -2))))
+
+(define weights/rests/param (make-parameter '(5 1)))
+
+(define weights&repeats/param (make-parameter (cons '(15 5 1) '(1 2 3))))
+
+(define weights&durations/param (make-parameter (cons '(8 2 1) '(S E Q))))
+
+(struct/contract VoiceParams ([instr             instr?]
+                              [pitch-range       pitch-range-pair/c]
+                              [weights&intervals weights&intervals/c]
+                              [weights/rests     weights/c]
+                              [weights&repeats   weights&repeats/c]
+                              [weights&durations weights&durations/c]))
+
+(define voice-high/param
+  (thunk (VoiceParams (piano/param)
+                      (high-pitch-range/param)
+                      (descending-weights&intervals/param)
+                      (weights/rests/param)
+                      (weights&repeats/param)
+                      (weights&durations/param))))
+
+(define voice-mid/param
+  (thunk (VoiceParams (piano/param)
+                      (mid-pitch-range/param)
+                      (descending-weights&intervals/param)
+                      (weights/rests/param)
+                      (weights&repeats/param)
+                      (weights&durations/param))))
+
+(define voice-low/param
+  (thunk (VoiceParams (piano/param)
+                      (low-pitch-range/param)
+                      (descending-weights&intervals/param)
+                      (weights/rests/param)
+                      (weights&repeats/param)
+                      (weights&durations/param))))
+
+(define voices/param (thunk (list (voice-high/param) (voice-mid/param) (voice-low/param))))
+
+(define/contract (gen-voice-events/params params)
+  (-> VoiceParams? generator?)
+  (gen-voice-events (VoiceParams-weights&intervals params)
+                    (VoiceParams-pitch-range params)
+                    (VoiceParams-weights/rests params)
+                    (VoiceParams-weights&repeats params)
+                    (VoiceParams-weights&durations params)))
+
+(define/contract generated-voices/param
+  (-> (listof voice/c))
+  (thunk
+   (let* ([notes-or-restss-gens (map gen-voice-events/params (voices/param))]
+          [notes-or-rests       (map (lambda (gen) (apply append (generate-while (const #t) gen))) notes-or-restss-gens)]
+          [voice-eventss        (map add-key-signature notes-or-rests)])
+     (map (curry SplitStaffVoice (instr-param)) voice-eventss))))
+
+(define/contract score-2/parameterized
+  (-> Score?)
+  (thunk
+   (let* ([voices (generated-voices/param)]
+          [voices-group (voices-group/parameterized voices)])
+     (score/parameterized (list (extend&align-voices-group-durations voices-group))))))
+
+(define/contract gen-score-2-file/parameterized
+  (-> boolean?)
+  (thunk
+   (let* ([output-file-name (string-append "test/" (file-name-param) ".ly")]
+          [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)]
+          [score (score-2/parameterized)])
+     (display (score->lily score) output-port)
+     (close-output-port output-port)
+     (system (format "lilypond -s -o test ~v" output-file-name)))))
+
+(parameterize ((descending-weights&intervals/param (cons '(5 3 1) '(-1 2 -2)))) (gen-score-2-file/parameterized))
+
 

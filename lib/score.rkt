@@ -68,7 +68,7 @@
 
 (struct/contract Spacer ([dur duration?]) #:transparent)
 
-(define/contract (chord-ctor-guard pitches dur controls tie type-name)
+(define/contract (chord-ctor-guard pitches dur controls tie _)
   (-> (listof pitch/c) duration? (listof control/c) boolean? symbol? (values (listof pitch/c) duration? (listof control/c) boolean?))
   (let ([sorted-pitches (sort pitches < #:key pitch->chromatic-index)])
     (values sorted-pitches dur controls tie)))

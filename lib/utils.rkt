@@ -3,6 +3,7 @@
 ;; utils: routines with no internal dependencies
 
 (provide
+ 
  (contract-out
   ;; rotate list forward or backward for positive
   ;; or negative value e.g. '(1 2 3) 1 -> '(2 3 1)
@@ -25,12 +26,27 @@
   ;; '(1 2 3) -> '((1 2) (2 3))
   ;; '(1 2 3 4) -> '((1 2) (2 3) (3 4))
   [list->pairs (-> (listof any/c) (listof (cons/c any/c any/c)))]
+
+  ;; scanl binary op there will be three params, carry, (i, sum)
+  ;; * i is #t and s is #t => add them and continue, doesn't matter about carry
+  ;; * i is #f and s is #t => (set! c s) and answer #f (on next call, s will be #f)
+  ;; * i is #t and s is #f => (set! c (+ c i)) and answer c (wipes out previous s #f)
+  ;; * i is #f and s is #f => answer #f and preserve c as is
+  [op-maybe (-> (-> any/c any/c any/c) (-> any/c any/c (or/c #f any/c)))]
+
+  ;; take all but last element in list
+  [inits (-> (listof any/c) any/c)]
   ))
 
 (require (only-in algorithms scanl))
 
 ;; - - - - - - - - -
 ;; implementation
+
+(define (inits l)
+  (if (null? l)
+      '()
+      (take l (- (length l) 1))))
 
 ;; rotate list forward by cnt, e.g. given '(1 2 3) and 1, give '(2 3 1)
 ;; [rotate-list-by (-> list? exact-integer? list?)
@@ -141,4 +157,46 @@
       (let ([t (cdr l)])
         (cons (cons (car l) (car t)) (list->pairs t)))))
 
+;; * (s)um starts off as first element in the list
+;; * i(ncrement) iterates across the rest of the elements in the list
+;; * scanl iterates by apply op with i and s successively
+;; except, op-maybe knows of carry so it can propagate #f
+(define (op-maybe op)
+  (let ([c 0]) ;; (c)arry across #f
+    (lambda (i s) ;; from scanl: next (i)ncrement, (s)um or accumulator
+      (cond [(and i s)
+             (op i s)]
+            [(and (not i) s)
+             (set! c s)
+             #f]
+            [(and i (not s))
+             (set! c (op c i))
+             c]
+            [(and (not i) (not s))
+             #f]))))
   
+(module+ test
+  (check-equal?
+   (scanl (op-maybe +) '(1 2 3 4))
+   '(1 3 6 10))
+  (check-equal?
+   (scanl (op-maybe +) '(1 2 3 #f))
+   '(1 3 6 #f))
+  (check-equal?
+   (scanl (op-maybe +) '(#f 2 3 4))
+   '(#f 2 5 9))
+  (check-equal?
+   (scanl (op-maybe +) '(1 #f 3 4))
+   '(1 #f 4 8))
+  (check-equal?
+   (scanl (op-maybe +) '(1 2 #f 4))
+   '(1 3 #f 7))
+  (check-equal?
+   (scanl (op-maybe +) '(1 #f #f 4))
+   '(1 #f #f 5))
+  (check-equal?
+   (scanl (op-maybe +) '(1 #f #f #f))
+   '(1 #f #f #f))
+  (check-equal?
+   (scanl (op-maybe +) '(#f #f #f #f))
+   '(#f #f #f #f)))

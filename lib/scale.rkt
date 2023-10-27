@@ -1,4 +1,5 @@
 #lang racket
+
 ;; scale:
 ;; 1) Scale struct, and scales:
 ;; - chromatic
@@ -34,6 +35,9 @@
 
  ;; pitches for a range, may be low / high or high / low
  pitch-range-pair/c
+
+ ;; interval is exact-integer? for positive and negative
+ maybe-interval/c
  
  ;; - - - - - - - - -
  ;; Utilities
@@ -71,7 +75,7 @@
   [transpose/successive (-> Scale?
                             pitch-range-pair/c
                             pitch/c
-                            (or/c exact-integer? (listof exact-integer?))
+                            (or/c maybe-interval/c (listof maybe-interval/c))
                             (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
   ;; transpose from the starting pitch using a single exact-integer? or a list of exact-integer?
@@ -82,7 +86,7 @@
   [transpose/absolute (-> Scale?
                           pitch-range-pair/c
                           pitch/c
-                          (or/c exact-integer? (listof exact-integer?))
+                          (or/c maybe-interval/c (listof maybe-interval/c))
                           (or/c maybe-pitch/c (listof maybe-pitch/c)))]
   
   ;; minimum and maximum pitches for a scale
@@ -119,9 +123,12 @@
 
 (require (only-in lily-gen/lib/score-syms octave-syms octave-list-ref octave-list-idx pitch-class? duration? pitch/c maybe-pitch/c mode?))
 
-(require (only-in lily-gen/lib/utils rotate-list-by))
+(require (only-in lily-gen/lib/utils rotate-list-by op-maybe))
 
 (require (only-in lily-gen/lib/unfold iterate-list-comprehension-sum))
+
+(define maybe-interval/c
+  (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c exact-integer? false/c)))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -169,7 +176,6 @@
                                                 '(Cs D E F G Gs As B)
                                                 '(C Cs Ds E Fs G A Bf)))
 
-;; TBD: retry with enharmonic equivalents for root on failure, e.g. no Ff but E is ok.
 ;; search each of lists of octatonic pitch classes  where root is at index 0, 2, 4, 6
 (define/contract (octatonic-scale root pcs-list)
   (-> pitch-class? (listof (listof pitch-class?)) Scale?)
@@ -406,32 +412,34 @@
     (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
   (xpose/internal scale pitch pitch-range-pair interval))
 
-;; pitch and pitch-range-pair already guarded, so
+;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
-(define/contract (xpose/internal scale pitch pitch-range-pair interval)
+(define/contract (xpose/internal scale pitch pitch-range-pair maybe-interval)
   (-> Scale? pitch/c pitch-range-pair/c exact-integer? maybe-pitch/c)
-  (let* ([pitch-idx (pitch->index scale pitch)]
-         [pitch-off (+ pitch-idx interval)])
-    (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
-      #f
-      (let ([xposed-pitch (index->pitch scale (+ pitch-idx interval))])
-        (pitch-in-range? pitch-range-pair xposed-pitch)))))
+  (if maybe-interval
+      (let* ([pitch-idx (pitch->index scale pitch)]
+             [pitch-off (+ pitch-idx maybe-interval)])
+        (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
+            #f
+            (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval))])
+              (pitch-in-range? pitch-range-pair xposed-pitch))))
+      #f))
 
-;; (-> Scale? pitch-range-pair/c pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/successive scale pitch-range-pair pitch interval/intervals)
+;; (-> Scale? pitch-range-pair/c pitch/c (or/c maybe-interval? (listof maybe-interval?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/successive scale pitch-range-pair pitch maybe-interval/maybe-intervals)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (if (list? interval/intervals)
-      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) (scanl + interval/intervals))
-      (xpose/internal scale pitch pitch-range-pair interval/intervals)))
+  (if (list? maybe-interval/maybe-intervals)
+      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) (scanl (op-maybe +) maybe-interval/maybe-intervals))
+      (xpose/internal scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
 
-;; (-> Scale? pitch-range-pair/c pitch/c (or/c exact-integer? (listof exact-integer?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
-(define (transpose/absolute scale pitch-range-pair pitch interval/intervals)
+;; (-> Scale? pitch-range-pair/c pitch/c (or/c maybe-interval? (listof maybe-interval?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
+(define (transpose/absolute scale pitch-range-pair pitch maybe-interval/maybe-intervals)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'transpose/absolute "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (if (list? interval/intervals)
-      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) interval/intervals)
-      (xpose/internal scale pitch pitch-range-pair interval/intervals)))
+  (if (list? maybe-interval/maybe-intervals)
+      (map (lambda (maybe-interval) (xpose/internal scale pitch pitch-range-pair maybe-interval)) maybe-interval/maybe-intervals)
+      (xpose/internal scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
 
 ;; the max index for a list of pitches for the scale
 ;; starting from 0 to the final index, inclusive
