@@ -415,7 +415,7 @@
 ;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
 (define/contract (xpose/internal scale pitch pitch-range-pair maybe-interval)
-  (-> Scale? pitch/c pitch-range-pair/c exact-integer? maybe-pitch/c)
+  (-> Scale? pitch/c pitch-range-pair/c maybe-interval/c maybe-pitch/c)
   (if maybe-interval
       (let* ([pitch-idx (pitch->index scale pitch)]
              [pitch-off (+ pitch-idx maybe-interval)])
