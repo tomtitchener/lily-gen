@@ -52,8 +52,6 @@
   ;; by weights for count of repetitions for each element from input generator
   [weighted-repeats-generator (-> (non-empty-listof exact-integer?) (non-empty-listof exact-integer?) generator? generator?)]
 
-  [motif-generator (-> Scale? pitch/c (listof (cons/c relative-weight/c abstract-motif/c)) (-> (listof (listof (or/c Note? Rest?))) boolean?) generator?)]
-  
   ;; generate until predicate fails or generator-state is done,
   ;; supply (const #t) as predicate to collect all output as a list
   [generate-while (-> predicate/c generator? (listof any/c))]
@@ -84,10 +82,10 @@
   (make-flat-contract #:name 'relative-weight/c #:first-order exact-positive-integer?))
 
 (define abstract-motif-element/c
-  (make-flat-contract #:name 'abstract-motif-element/c #:first-order (list/c maybe-interval/c (listof control/c) (listof duration?))))
+  (make-flat-contract #:name 'abstract-motif-element/c #:first-order (list/c maybe-interval/c (listof control/c) (non-empty-listof duration?))))
 
 (define abstract-motif/c
-  (make-flat-contract #:name 'abstract-motif/c #:first-order (listof abstract-motif-element/c)))
+  (make-flat-contract #:name 'abstract-motif/c #:first-order (non-empty-listof abstract-motif-element/c)))
 
 ;; (-> generator? generator? generator? generator?)
 (define (note-or-rest-generator pitch-or-f-gen duration-gen accent-or-f-gen)
@@ -352,118 +350,53 @@
     (check-equal? (generate-while (const #t) outer) '((2 3) (5 6))))
   )
 
-;; generator emits motifs as (listof (or/c Note? Rest?))
-;; - state (let lambda):
-;;   * pitch/c starts as #f,
-;;     - first call sets to starting pitch/c
-;;     - subsequent calls (not #f) set to final pitch/c in motif
-;;   * (listof (listof (or/c Note Rest?))) is all previous motifs,
-;;     starts as '(), updated by append with new result before yield
-;; - args:
-;;   * Scale?
-;;   * starting pitch/c
-;;   * pairs of weights and abstract motifs: (listof (cons/c relative-weight/c abstract-motif/c))
-;;   * done? as (-> (listof (listof (or/c Note? Rest?))) boolean?)
-;; - each call
-;;   * test if the state with done? arg val
-;;     - if (done? state) then return (void) without yielding
-;;     - else generate new motif to state and (yield motif)
-;; - to generate new motif:
-;;   * transpose/successive ...
-;;     ... abstract-motif-element/c includes maybe-interval/c so I need a
-;;     ... new routine that accepts (listof maybe-interval/c) or to make
-;;     ... the internal adjustments to transpose/successive, transpose/abolute,
-;;     ... and xpose/internal
-;;   * update pitch/c in state with final pitch in new motif
-;;   * map motif to (or/c Note Rest?) based on maybe-interval/c in motif
-;;   * append motif to list of motifs in state
-;;   * yield motif
-;; (-> Scale? pitch/c (listof (cons/c relative-weight/c abstract-motif/c)) (-> (listof (listof (or/c Note? Rest?))) boolean?) generator?)
-(define (motif-generator scale starting-pitch weighted-abstract-motifs done?)
-  (let* ([begin-pitch      starting-pitch]  ;; mutables
-         [all-motifs       '()]
-         [pitch-range-pair (scale->pitch-range-pair scale)] ;; consts
-         [weights          (map car weighted-abstract-motifs)]
-         [abstract-motifs  (map cdr weighted-abstract-motifs)]
-         [buckets          (gen-buckets weights)])
-    (generator ()
-      (let loop ()
-        (if (done? all-motifs)
-            (void)
-            (let* ([rand    (random)]
-                   [rand-ix (list-index (lambda (bucket) (<= rand bucket)) buckets)])
-              (match (sequence->list (unzip (list-ref abstract-motifs rand-ix)))
-                [(list maybe-intervals controlss durationss)
-                 (let* ([maybe-pitches (transpose/successive scale pitch-range-pair begin-pitch maybe-intervals)]
-                        [motif         (flatten (map gen-notes-or-rests maybe-pitches controlss durationss))])
-                   (set! all-motifs (append all-motifs (list motif)))
-                   (let ([maybe-pitch (find identity (reverse maybe-pitches))])
-                     (when maybe-pitch
-                       (set! begin-pitch maybe-pitch)))
-                   (yield motif)
-                   (loop))])))))))
-
-(define/contract (gen-notes-or-rests maybe-pitch controls durations)
-  (-> maybe-pitch/c (listof control/c) (listof duration?) (or/c (listof Rest?) (listof Note?)))
-  (if maybe-pitch
-      (let ([pitch (car maybe-pitch)]
-            [octave (cdr maybe-pitch)])
-        (if (= 1 (length durations))
-            ;; one dur => list of one Note 
-            (list (Note pitch octave (car durations) controls #f))
-            ;; many durs => list with first note with controls and tie #t, middle notes with '(), tie #t, final note with '(), tie #f
-            (let ([first (Note pitch octave (car durations) controls #t)]
-                  [middle (map (lambda (duration) (Note pitch octave duration '() #t)) (drop (inits durations) 1))]
-                  [last  (Note pitch octave (last durations) '() #f)])
-              (cons first (append middle (list last))))))
-      (map (lambda (duration) (Rest duration)) durations)))
-
-;; rewrite this:
-;; * outer loop can be generate-while
-;;   - means instead of returning genreator, returns (listof (listof (or/c Note? Rest?)))
-;; * inner loop can use weighted-list-element-generator to choose next abstract motif,
-;;   keep track of all-motifs, begin-pitch
-;; * new routine converts  each begin-pitch and abstract-motif/c to (listof (or/c Note? Rest?))
-;;   - if maybe-interval/c is #f then simple map of Rest of durations
-;;   - else foldr over durations accumulating (listof Note?)
-;;     + if accumulator is empty tie is #f, else #t
-;;     + if (= (length durations) (length accumulator)) then controls is from list else '()
-
-(define/contract (accum-motifs abs-motif motifs)
-  (-> (list/c maybe-pitch/c (listof control/c) (listof duration?)) (listof (listof (or/c Note? Rest?))) (listof (listof (or/c Note? Rest?))))
+(define/contract (abs-motif->motif abs-motif)
+  (-> (list/c maybe-pitch/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest?)))
   (match abs-motif
     [(list maybe-pitch controls durations)
-     (let ([motif
-            (if maybe-pitch
-                (let ([pitch (car maybe-pitch)]
-                      [octave (cdr maybe-pitch)]
-                      [count-durs (length durations)])
-                  (foldr (lambda (duration acc)
-                           (let ([last  (null? acc)]
-                                 [first (= (sub1 count-durs) (length acc))])
-                             (cons (Note pitch octave duration (if first controls '()) (not last)) acc)))
-                         '() durations))
-                (map Rest durations))])
-       (cons (if (list? motif) motif (list motif)) motifs))]))
+     (if maybe-pitch
+         (let ([pitch (car maybe-pitch)]
+               [octave (cdr maybe-pitch)]
+               [count-durs (length durations)])
+           (foldr (lambda (duration acc)
+                    (let ([last  (null? acc)]
+                          [first (= (sub1 count-durs) (length acc))])
+                      (cons (Note pitch octave duration (if first controls '()) (not last))  acc)))
+                  '() durations))
+         (map Rest durations))]))
 
+;; used foldr function over partially-resolved abstract-motif/c, maybe-interval/c => maybe-pitch/c
+(define/contract (accum-motifs abs-motif motifs)
+  (-> (list/c maybe-pitch/c (listof control/c) (listof duration?))
+      (listof (non-empty-listof (or/c Note? Rest?)))
+      (non-empty-listof (non-empty-listof (or/c Note? Rest?))))
+  (let ([motif (abs-motif->motif abs-motif)])
+    (cons (if (list? motif) motif (list motif)) motifs)))
+
+;; (compose (compose sequence->list zip) (compose sequence->list unzip)) is noisy
+;; but incrementally applying (scanl (op-maybe +) _) to maybe-interval/c is noisier
 (define/contract (motif-gen scale starting-pitch abstract-motif-gen)
   (-> Scale? pitch/c generator? generator?)
   (let* ([begin-pitch      starting-pitch]  ;; mutable
-         [pitch-range-pair (scale->pitch-range-pair scale)])
+         [pitch-range-pair (scale->pitch-range-pair scale)]) ;; const
     (generator ()
        (let loop ()
          (match (sequence->list (unzip (abstract-motif-gen)))
            [(list maybe-intervals controlss durationss)
             (let* ([maybe-pitches (transpose/successive scale pitch-range-pair begin-pitch maybe-intervals)]
-                   [motifss (foldr accum-motifs '() (sequence->list (zip maybe-pitches controlss durationss)))])
-              (let ([maybe-pitch (find identity (reverse maybe-pitches))])
-                (when maybe-pitch
-                  (set! begin-pitch maybe-pitch)))
+                   [motifss (foldr accum-motifs '() (sequence->list (zip maybe-pitches controlss durationss)))]
+                   [maybe-pitch (find identity (reverse maybe-pitches))])
+              (when maybe-pitch
+                (set! begin-pitch maybe-pitch))
               (yield (flatten motifss))
               (loop))])))))
 
 (define/contract (generate-motifs scale starting-pitch weights&abstract-motifs done?)
-  (-> Scale? pitch/c (non-empty-listof (list/c relative-weight/c abstract-motif/c)) (-> (listof (or/c Note? Rest?)) boolean?) (listof (listof (or/c Note? Rest?))))
+  (-> Scale?
+      pitch/c
+      (non-empty-listof (list/c relative-weight/c abstract-motif/c))
+      (-> (non-empty-listof (or/c Note? Rest?)) boolean?)
+      (non-empty-listof (non-empty-listof (or/c Note? Rest?))))
   (let ([abstract-motif-gen (weighted-list-element-generator weights&abstract-motifs)])
     (generate-while (compose not done?) (motif-gen scale starting-pitch abstract-motif-gen))))
 
@@ -475,57 +408,112 @@
 ;;       (set! ll (cons l ll))
 ;;       (>= (length ll)  10))))
 
-;; (module+ test
-;;   (require rackunit)
-;;   (require (only-in lily-gen/lib/utils sum<=?))
-;;   (let* ([start-pitch (cons 'C '0va)]
-;;          [abs-motif-1 (list (list 1 '(Accent) '(E Q)) (list -1 '() '(W)))]
-;;          [abs-motif-2 (list (list 3 '(Accent) '(S)) (lists -1 '() '(S)))]
-;;          [abs-motif-3 (list (list #f '() '(E)))]
-;;          [abs-motifs  (list (cons 1 abs-motif-1) (cons 1 abs-motif-2) (cons 1 abs-motif-3))]
-;;          [mot-gen     (motif-generator C-major start-pitch abs-motifs (lambda (l) (>= (length l) 10)))]
-;;          [motifs      (generate-while (const #t) mot-gen)])
-    ;;
-    ;; validate result, e.g.:
-    ;; (list (list (Note 'D '0va 'E '(Accent) #t) (Note 'D '0va 'Q '() #f) (Note 'C '0va 'W '() #f))
-    ;;       (list (Note 'F '0va 'S '(Accent) #f) (Note 'E '0va 'S '() #f))
-    ;;       (list (Rest 'E)))
-    ;; against templates in abstract motifs, where order of motifs will be random
-    ;;
-    ;; given start-pitch and wabms, check each motif against elements in wabms by converting
-    ;; (listof (or/c Note Rest)) in motif into abstract-motif/c, then doing a find for the
-    ;; abstract-motif/c in list that is the map cdr of abs-motifs
-    ;;
-    ;; to convert, need to keep track of start pitch as I progress through motifs
-    ;; consider cases:
-    ;; * (Rest 'E) => (cons #f (cons '() '(e)))
-    ;; * Note without tie, e.g.: (Note 'F '0va 'S '(Accent) #f) => cons <int> <accs>
-    ;;   - int: (- (pitch->index (cons 'F '0va)) (pitch->index (start-pitch e.g. (cons 'C '0va)) ))
-    ;;   - accs: copy verbatim
-    ;;   - tie: #f means only one duration in list from abs-motif (cons 3 '(Accent) '(S))
-    ;;   and update current-pitch to be (cons 'F '0va)
-    ;; * Note with tie:  means collapsing tied notes together into one abs-motif with multiple durations
-    ;;   - fold over tied notes e.g. until first tie as #f accumulating list of pitches, durations, controls
-    ;;   - verify all pitches are the same and controls after first note are all empty list
-    ;;   - convert the tuple with lists of pitches, durations, and controls to a single abstract-motif element
-    ;; - update ending pitch for next motif
-    
-;; this is stupid, I'm just reinventing unzip for list of pairs when I could be using
-;; seq:unzip for a list of list (or srf1:unzip2) with let-values
-;; (define trial
-;;   (foldr (lambda (x acc) (let ([f (car x)]
-;;                                [g (cdr x)]
-;;                                [fs (cons (car x) (car acc))]
-;;                                [gs (cons (cdr x) (cdr acc))])
-;;                            (printf "x: ~v acc ~v f: ~v g: ~v fs: ~v gs:~v \n" x acc f g fs gs)
-;;                            (cons fs gs)))
-;;          (cons '() '())
-;;          (list (cons 'a 1) (cons 'b 2) (cons 'c 3))))
+;; TBD: use logging instead of printf so messages can be enabled from REPL?
+(module+ test
+  (require rackunit)
+  (require (only-in lily-gen/lib/utils sum<=?))
+  (define/contract (motif->abs-motif scale starting-pitch motif)
+    (-> Scale? pitch/c (non-empty-listof (or/c Note? Rest?)) (list/c pitch/c abstract-motif/c))
+    (struct ST (current-state abstract-motif previous-pitch current-pitch controls durations) #:transparent)
+    (define (pitches->interval first-pitch this-pitch)
+      (- (pitch->index scale this-pitch) (pitch->index scale first-pitch)))
+    (let loop ([sm (ST 'E '() starting-pitch #f '() '())]
+               [mot motif])
+      (match (ST-current-state sm)
+        ['E
+         (match mot
+           ['()
+            #;(printf "ST 'E END, state ~v\n ret: ~v\n" sm (list (ST-previous-pitch sm) (ST-abstract-motif sm)))
+            (list (ST-previous-pitch sm) (ST-abstract-motif sm))
+            ]
+           [(cons m ms)
+            (match m
+              [(Note pc oct dur ctrls #t) ;; start of list of notes
+               (let* ([this-pitch (cons pc oct)])
+                 (let ([st (ST 'AN (ST-abstract-motif sm) (ST-previous-pitch sm) this-pitch ctrls (list dur))])
+                   #;(printf "Note with tie:\n old state ~v\n new state ~v\n" sm st)
+                   (loop st ms)))]
+              [(Note pc oct dur ctrls #f) ;; singleton note 
+               (let* ([this-pitch (cons pc oct)]
+                      [interval   (pitches->interval (ST-previous-pitch sm) this-pitch)]
+                      [note-elem  (list interval ctrls (list dur))]
+                      [abs-motif  (append (ST-abstract-motif sm) (list note-elem))])
+                 (let ([st (ST 'E abs-motif this-pitch #f '() '())])
+                   #;(printf "Note no tie:\n old state ~v\n new state ~v\n" sm st)
+                   (loop st ms)))]
+              [(Rest dur)
+               (let [(st (ST 'AR (ST-abstract-motif sm) (ST-previous-pitch sm) #f '() (list dur)))]
+                 #;(printf "Rest:\n old state ~v\n new state ~v\n" sm st)
+                 (loop st ms))])])]
+        ['AN
+         (match mot
+           ['()
+            (error 'motif->abs-motif "match EOL in state 'AN, state: ~v" sm)]
+           [(cons m ms)
+            (match m
+              [(Note pc oct dur _ #t)
+               (when (not (equal? (cons pc oct) (ST-current-pitch sm)))
+                 (error 'motif->abs-motif "no match current-pitch ~v with this pitch ~v state ~v" (cons pc oct) (ST-current-pitch sm) sm))
+               (let ([st (struct-copy ST sm (durations (append (ST-durations sm) (list dur))))])
+                 #;(printf "Note with tie:\n old state ~v\n new state ~v\n" sm st)
+                 (loop st ms))]
+              [(Note pc oct dur _ #f)
+               (when (not (equal? (cons pc oct) (ST-current-pitch sm)))
+                 (error 'motif->abs-motif "note no tie no match current-pitch ~v with this pitch ~v state ~v" (cons pc oct) (ST-current-pitch sm) sm))
+               (let* ([this-pitch (cons pc oct)]
+                      [interval (pitches->interval (ST-previous-pitch sm) this-pitch )]
+                      [note-elem (list interval (ST-controls sm) (append (ST-durations sm) (list dur)))])
+                 (let ([st (ST 'E (append (ST-abstract-motif sm) (list note-elem)) this-pitch #f '() '())])
+                   #;(printf "Note no tie:\n old state ~v\n new state ~v\n" sm st)
+                   (loop st ms)))]
+              [(Rest dur)
+               (error 'motif-abs-motif "Unexpected Rest dur: ~v in state 'AN, state: ~v" dur sm)])])]
+        ['AR
+         (match mot
+           ['()
+            (let ([ret (append (ST-abstract-motif sm) (list (list #f '() (ST-durations sm))))])
+              #;(printf "ST 'AR END, state ~v\n ret: ~v" sm (list (ST-previous-pitch sm) ret))
+              (list (ST-previous-pitch sm) ret))]
+           [(cons m ms)
+            (match m
+              [(Note pc oct dur ctrls #t)
+               (let* ([this-pitch (cons pc oct)]
+                      [rests-elem (list #f '() (ST-durations sm))])
+                 (let ([st (ST 'AN (append (ST-abstract-motif sm) (list rests-elem)) (ST-previous-pitch sm) this-pitch ctrls (list dur))])
+                   #;(printf "Note with tie:\n old state ~v\n new state ~v\n" sm st)
+                   (loop st ms)))]
+              [(Note pc oct dur ctrls #f)
+               (let* ([this-pitch (cons pc oct)]
+                      [interval (pitches->interval (ST-previous-pitch sm) this-pitch)]
+                      [rests-elem (list #f '() (ST-durations sm))]
+                      [note-elem (list interval ctrls (list dur))])
+                 (let ([st (ST 'E (append (ST-abstract-motif sm) (list rests-elem  note-elem)) this-pitch #f '() '())])
+                   #;(printf "Note no tie\n old state ~v\n new state ~v\n" sm st)
+                   (loop st ms)))]
+              [(Rest dur)
+               (let ([st (struct-copy ST sm (durations (append (ST-durations sm) (list dur))))])
+                 #;(printf "Rest:\n old state ~v\n new state ~v\n" sm st)
+                 (loop st ms))])])])))
+  (define (done? cnt)
+    (let ([ll '()])
+      (lambda (l)
+        (set! ll (cons l ll))
+        (>= (length ll)  cnt))))
+  ;; don't set done? count higher than 10 or risk transposing beyond range of C-major scale
+  (let* ([start-pitch (cons 'C '0va)]
+         [abs-motif-1 (list (list 1 '(Accent) '(E Q)) (list -1 '() '(W)))]
+         [abs-motif-2 (list (list 3 '(Accent) '(S)) (list -1 '() '(S)))]
+         [abs-motif-3 (list (list #f '() '(E)))]
+         [abs-motif-4 (list (list #f '() '(Q W)))]
+         [abs-motifs  (list abs-motif-1 abs-motif-2 abs-motif-3 abs-motif-4)]
+         [motifs      (generate-motifs C-major start-pitch (map (lambda (motif) (list 1 motif)) abs-motifs) (done? 10))])
+    #;(printf "motifs: ~v\n" motifs)
+    (void (foldl (lambda (motif this-start-pitch)
+             (match (motif->abs-motif C-major this-start-pitch motif)
+               [(list next-start-pitch abs-motif)
+                (let ([is-member? (if (member abs-motif abs-motifs) #t #f)])
+                  #;(printf "checking for motif: ~v\n as abs-motif: ~v\n in abs-motifs: ~v\n is-member? ~v\n" motif abs-motif abs-motifs is-member?)
+                  (check-true is-member?)
+                  next-start-pitch)]))
+           start-pitch motifs))))
 
-;;generators.rkt> trial
-;;'((a b c) 1 2 3)
-
-;; (sequence->list (unzip (list (list 'a 1) (list 'b 2) (list 'c 3))))
-;; '((a b c) (1 2 3))
-
-;; trick is going to be to change the definition of abstract-motif-element/c from tuple to list
