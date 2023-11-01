@@ -9,6 +9,10 @@
 
 (provide
  relative-weight/c
+
+ abstract-motif-element/c
+ 
+ abstract-motif/c
  
  (contract-out
   ;; proof of concept for nested generators, yield a Note or a Rest until a 
@@ -58,6 +62,18 @@
 
   ;; answer generator that applies function to all generator results, arities must match
   [generator-map (-> (-> any/c any/c) generator? generator?)]
+
+  ;; generates a list of list of (Note or Rest) with last arg as done? function given most recent (list of (Note or Rest/))
+  [generate-motifs 
+   (-> Scale?
+       ;; starting-pitch
+       pitch/c
+       ;; weighted-list of abstract-motif as (list/c maybe-interval/c (listof controls/c) (non-empty-listof duration?))
+       ;; where maybe-interval/c as #f => one or more Rests, else one or more Notes by duration, multiple Notes are tied.
+       (non-empty-listof (list/c relative-weight/c abstract-motif/c))
+       ;; done? terminating routine that looks at most recent list of (Note or Rest) only, accumulates itself if necessary
+       (-> (non-empty-listof (or/c Note? Rest?)) boolean?)
+       (non-empty-listof (non-empty-listof (or/c Note? Rest?))))]
   ))
 
 ;; - - - - - - - - -
@@ -385,12 +401,7 @@
               (yield (flatten motifss))
               (loop (if maybe-pitch maybe-pitch begin-pitch)))])))))
 
-(define/contract (generate-motifs scale starting-pitch weights&abstract-motifs done?)
-  (-> Scale?
-      pitch/c
-      (non-empty-listof (list/c relative-weight/c abstract-motif/c))
-      (-> (non-empty-listof (or/c Note? Rest?)) boolean?)
-      (non-empty-listof (non-empty-listof (or/c Note? Rest?))))
+(define (generate-motifs scale starting-pitch weights&abstract-motifs done?)
   (let ([abstract-motif-gen (weighted-list-element-generator weights&abstract-motifs)])
     (generate-while (compose not done?) (motif-gen scale starting-pitch abstract-motif-gen))))
 
