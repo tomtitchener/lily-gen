@@ -377,10 +377,9 @@
 ;; but incrementally applying (scanl (op-maybe +) _) to maybe-interval/c is noisier
 (define/contract (motif-gen scale starting-pitch abstract-motif-gen)
   (-> Scale? pitch/c generator? generator?)
-  (let* ([begin-pitch      starting-pitch]  ;; mutable
-         [pitch-range-pair (scale->pitch-range-pair scale)]) ;; const
+  (let ([pitch-range-pair (scale->pitch-range-pair scale)]) ;; const
     (generator ()
-       (let loop ()
+       (let loop ([begin-pitch starting-pitch])
          (match (sequence->list (unzip (abstract-motif-gen)))
            [(list maybe-intervals controlss durationss)
             (let* ([maybe-pitches (transpose/successive scale pitch-range-pair begin-pitch maybe-intervals)]
@@ -389,7 +388,7 @@
               (when maybe-pitch
                 (set! begin-pitch maybe-pitch))
               (yield (flatten motifss))
-              (loop))])))))
+              (loop (if maybe-pitch maybe-pitch begin-pitch)))])))))
 
 (define/contract (generate-motifs scale starting-pitch weights&abstract-motifs done?)
   (-> Scale?
