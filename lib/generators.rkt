@@ -385,8 +385,6 @@
             (let* ([maybe-pitches (transpose/successive scale pitch-range-pair begin-pitch maybe-intervals)]
                    [motifss (foldr accum-motifs '() (sequence->list (zip maybe-pitches controlss durationss)))]
                    [maybe-pitch (find identity (reverse maybe-pitches))])
-              (when maybe-pitch
-                (set! begin-pitch maybe-pitch))
               (yield (flatten motifss))
               (loop (if maybe-pitch maybe-pitch begin-pitch)))])))))
 
