@@ -367,13 +367,13 @@
 
 ;; used foldr function over partially-resolved abstract-motif/c, maybe-interval/c => maybe-pitch/c
 (define/contract (accum-motifs abs-motif motifs)
-  (-> (list/c maybe-pitch/c (listof control/c) (listof duration?))
+  (-> (list/c maybe-pitch/c (listof control/c) (non-empty-listof duration?))
       (listof (non-empty-listof (or/c Note? Rest?)))
       (non-empty-listof (non-empty-listof (or/c Note? Rest?))))
   (let ([motif (abs-motif->motif abs-motif)])
     (cons (if (list? motif) motif (list motif)) motifs)))
 
-;; (compose (compose sequence->list zip) (compose sequence->list unzip)) is noisy
+;; (compose (compose sequence->list zip) ... (compose sequence->list unzip)) is noisy
 ;; but incrementally applying (scanl (op-maybe +) _) to maybe-interval/c is noisier
 (define/contract (motif-gen scale starting-pitch abstract-motif-gen)
   (-> Scale? pitch/c generator? generator?)
@@ -408,7 +408,11 @@
 ;;       (set! ll (cons l ll))
 ;;       (>= (length ll)  10))))
 
+;; Experiment with FSM for parsing a motif into an abstract motif.
+;; Maybe this is the sort of thing that would work as a a grammer better?
+;; Took a lot of work to implement and more to debug.
 ;; TBD: use logging instead of printf so messages can be enabled from REPL?
+;; Note there's a racket logger running a logger integrated with emacs Racket mode.
 (module+ test
   (require rackunit)
   (require (only-in lily-gen/lib/utils sum<=?))
