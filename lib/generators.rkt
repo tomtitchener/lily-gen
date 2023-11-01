@@ -171,25 +171,24 @@
 
 ;; ((-> any/c generator?) generator? generator?)
 (define (generator-generator gen-inner-gen outer-gen)
-  (let ([inner-gen '()])
-    (generator ()
-      (let loop ()
-        (cond
-          [(symbol=? 'done (generator-state outer-gen))
-           (void)]
-          [(or (symbol=? 'fresh (generator-state outer-gen))
-               (symbol=? 'done  (generator-state inner-gen)))
-           (let ([next-outer-element (outer-gen)])
-             (when (symbol=? 'suspended (generator-state outer-gen))
-               (begin
-                 (set! inner-gen (gen-inner-gen next-outer-element))
-                 (yield (inner-gen))))
-               (loop))]
-          [(symbol=? 'suspended (generator-state inner-gen))
-           (let ([next-inner-element (inner-gen)])
-             (when (symbol=? 'suspended (generator-state inner-gen))
-               (yield next-inner-element))
-             (loop))])))))
+  (generator ()
+    (let loop ([inner-gen #f])
+      (cond
+        [(symbol=? 'done (generator-state outer-gen))
+         (void)]
+        [(or (symbol=? 'fresh (generator-state outer-gen))
+             (symbol=? 'done  (generator-state inner-gen)))
+         (let ([next-outer-element (outer-gen)])
+           (if (symbol=? 'suspended (generator-state outer-gen))
+             (let ([new-inner-gen (gen-inner-gen next-outer-element)])
+               (yield (new-inner-gen))
+               (loop new-inner-gen))
+             (loop #f)))] ;; outer-gen is now 'done, loop to return (void)
+        [(symbol=? 'suspended (generator-state inner-gen))
+         (let ([next-inner-element (inner-gen)])
+           (when (symbol=? 'suspended (generator-state inner-gen))
+             (yield next-inner-element))
+           (loop inner-gen))])))) ;; if inner-gen is 'done, loop to gen next inner-gen
 
 (define/contract (random-or-f-fun weights)
   (-> (non-empty-listof relative-weight/c) (-> any/c any/c))
