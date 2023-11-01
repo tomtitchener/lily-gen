@@ -145,18 +145,16 @@
   (unless (= (length weights) (length intervals))
     (error 'weighted-intervals-generator "unequal lengths for weights ~v vs. intervals ~v" weights intervals))
   (let ([buckets       (gen-buckets weights)]
-        [prev-pitch    (car pitch-range-pair)]
         [min-max-range (scale->pitch-range-pair scale)])
     (generator ()
-       (let loop ()
+       (let loop ([prev-pitch (car pitch-range-pair)])
          (let* ([ix         (list-index (lambda (bucket) (<= (random) bucket)) buckets)]
                 [interval   (list-ref intervals ix)]
                 [next-pitch (xpose scale min-max-range prev-pitch interval)])
-             (set! prev-pitch next-pitch)
              (if (and next-pitch (compare-pitches >= next-pitch (cdr pitch-range-pair)))
                  (begin
                    (yield next-pitch)
-                   (loop))
+                   (loop next-pitch))
                  (void)))))))
 
 ;; (-> Scale? pitch/c exact-integer? generator?)
