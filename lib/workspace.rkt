@@ -264,7 +264,7 @@
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 
-;; Next: experiment with octatonic scales and generators, forgetting about parameterization for now.
+;; Next: experiment with octatonic scales and generators
 ;;
 ;; Inner pattern generator takes scale and high and low pitches for range.
 ;; Implement nested generators 
@@ -329,12 +329,6 @@
 ;; 
 (define C-whole-oct (octatonic-whole-scale 'C))
 ;;
-(define ints-g (weighted-intervals-generator '(5 1) '(-1 -2) C-whole-oct (cons (cons 'C '22va) (cons 'C '22vb))))
-;;
-(define may-g (weighted-maybe-generator '(2 1) ints-g))
-;;
-(define reps-g (weighted-repeats-generator '(15 5 1) '(1 2 3) may-g))
-;;
 ;; (generate-while (const #t) reps-g)
 ;;
 ;; experimental mapping from (non-empty-listof (or/c #f pitch/c)) -> (non-empty-listof (or/c Rest? Note?))
@@ -365,8 +359,6 @@
         [(cons p o)
          (repeat (length fs-or-pitches) (Note p o dur '() #f))])))))
 
-(define ves-g (generator-map (fs-or-pitches->rests-or-notes '(8 2 1) '(S E Q)) reps-g))
-
 ;; inputs:
 ;; - intervals:    weights, intervals, start, stop
 ;; - maybes:       weights for (val) vs. #f
@@ -381,9 +373,9 @@
 ;;
 ;; do it direct, forget parameterization for now
 ;; 
-(define/contract (gen-ints weights intervals pitch-range)
-  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?) pitch-range-pair/c generator?)
-  (weighted-intervals-generator weights intervals C-whole-oct pitch-range))
+(define/contract (gen-ints scale weights intervals pitch-range)
+  (-> Scale? (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?) pitch-range-pair/c generator?)
+  (weighted-intervals-generator weights intervals scale pitch-range))
 
 (define/contract (gen-maybes weights gen)
   (-> (non-empty-listof exact-positive-integer?) generator? generator?)
@@ -397,14 +389,15 @@
   (-> (non-empty-listof exact-positive-integer?) (non-empty-listof duration?) generator? generator?)
   (generator-map (fs-or-pitches->rests-or-notes weights durations) gen))
 
-(define/contract (gen-voice-events weights-intervals-pr pitch-range weights-maybes weights-repeats-pr weights-durations-pr)
-  (-> (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?))
+(define/contract (gen-voice-events scale weights-intervals-pr pitch-range weights-maybes weights-repeats-pr weights-durations-pr)
+  (-> Scale?
+      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?))
       pitch-range-pair/c
       (non-empty-listof exact-positive-integer?)
       (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-positive-integer?))
       (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof duration?))
       generator?)
-  (let* ([ints-gen (gen-ints (car weights-intervals-pr) (cdr weights-intervals-pr) pitch-range)]
+  (let* ([ints-gen (gen-ints scale (car weights-intervals-pr) (cdr weights-intervals-pr) pitch-range)]
          [maybes-gen (gen-maybes weights-maybes ints-gen)]
          [repeats-gen (gen-repeats (car weights-repeats-pr) (cdr weights-repeats-pr) maybes-gen)])
     (gen-rests-or-notes (car weights-durations-pr) (cdr weights-durations-pr) repeats-gen)))
@@ -447,6 +440,7 @@
 (define weights&durations/param (make-parameter (cons '(8 2 1) '(S E Q))))
 
 (struct/contract VoiceParams ([instr             instr?]
+                              [scale             Scale?]
                               [pitch-range       pitch-range-pair/c]
                               [weights&intervals weights&intervals/c]
                               [weights/rests     weights/c]
@@ -455,6 +449,7 @@
 
 (define voice-high/param
   (thunk (VoiceParams (piano/param)
+                      C-major
                       (high-pitch-range/param)
                       (descending-weights&intervals/param)
                       (weights/rests/param)
@@ -463,6 +458,7 @@
 
 (define voice-mid/param
   (thunk (VoiceParams (piano/param)
+                      C-major
                       (mid-pitch-range/param)
                       (descending-weights&intervals/param)
                       (weights/rests/param)
@@ -471,6 +467,7 @@
 
 (define voice-low/param
   (thunk (VoiceParams (piano/param)
+                      C-major
                       (low-pitch-range/param)
                       (descending-weights&intervals/param)
                       (weights/rests/param)
@@ -481,7 +478,8 @@
 
 (define/contract (gen-voice-events/params params)
   (-> VoiceParams? generator?)
-  (gen-voice-events (VoiceParams-weights&intervals params)
+  (gen-voice-events (VoiceParams-scale params)
+                    (VoiceParams-weights&intervals params)
                     (VoiceParams-pitch-range params)
                     (VoiceParams-weights/rests params)
                     (VoiceParams-weights&repeats params)
@@ -512,6 +510,11 @@
      (close-output-port output-port)
      (system (format "lilypond -s -o test ~v" output-file-name)))))
 
-(parameterize ((descending-weights&intervals/param (cons '(5 3 1) '(-1 2 -2)))) (gen-score-2-file/parameterized))
-
+;; (parameterize
+;;     ((scale-param C-whole-tone)
+;;      (descending-weights&intervals/param (cons '(1 1 2) '(-1 1 -2)))
+;;      (high-pitch-range/param (cons (cons 'E '15va) (cons 'C '15vb)))
+;;      (mid-pitch-range/param  (cons (cons 'C '15va) (cons 'C '15vb)))
+;;      (low-pitch-range/param  (cons (cons 'A '15va) (cons 'C '15vb))))
+;;   (gen-score-2-file/parameterized))
 
