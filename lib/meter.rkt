@@ -104,7 +104,7 @@
 ;; (see beginning of add-durs-for-time-signature)
 (define/contract (bar-position-for-time-signature time-signature tot-curlen)
   (-> time-signature/c natural-number/c (cons/c natural-number/c natural-number/c))
-  (let* ([num-denom-gen (time-signature->num-denom-generator time-signature)]
+  (let* ([num-denom-gen (time-signature->num-denom/generator time-signature)]
          [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]
          [num-denom-pr  (num-denom-gen)]
          [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)])
@@ -122,7 +122,7 @@
 ;;    bar until remaining addlen goes to zero (succ-durs)
 (define/contract (add-end-durs-for-time-signature time-signature tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
-  (let* ([num-denom-gen (time-signature->num-denom-generator time-signature)]             ;; 1
+  (let* ([num-denom-gen (time-signature->num-denom/generator time-signature)]             ;; 1
          [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]        ;; 2
          [num-denom-pr  (num-denom-gen)]
          [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)]                ;; 3

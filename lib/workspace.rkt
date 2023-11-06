@@ -1,6 +1,6 @@
 #lang racket
 
-;; workspace.rkt:  experiment with routines
+;; workspace.rkt:  experiment with REPL using parameterization
 
 ;; nothing to provide, this is a stub to play with using the repl
 
@@ -10,69 +10,101 @@
 (require (only-in algorithms repeat))
 (require (only-in srfi/1 list-index))
 
+(require lily-gen/lib/lily)
 (require lily-gen/lib/utils)
 (require lily-gen/lib/meter)
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
 (require lily-gen/lib/scale)
-(require lily-gen/lib/lily)
 (require lily-gen/lib/generators)
 
-;; first target:  transpose/iterate
+;; general-purpose params, common to specialized generators
 
-;; transpose/iterate with default values as parameters
-
-(define gens-param (make-parameter 2))
-
-(define scale-param (make-parameter C-major))
+(define scale/param (make-parameter C-major))
 
 (define (scale->KeySignature scale)
   (let-values ([(tonic mode) (scale->key-signature-values scale)])
     (KeySignature tonic mode)))
 
-(define key-signature (thunk (scale->KeySignature (scale-param))))
+(define key-signature/param (make-derived-parameter scale/param identity scale->KeySignature))
 
-(define scale-range-min-max-pair-param (thunk (scale->pitch-range-pair (scale-param))))
+;; Hack!  Calling scale->pitch-range-pair in scale.rkt causes a memory access failure.  Why?
+;; Something to do with contracts?
+(define (loc-scale->pitch-range-pair scale)
+  (-> Scale? pitch-range-pair/c)
+  (cons (index->pitch scale 0) (index->pitch scale (scale->max-idx scale))))
 
-(define start-pitch-param (make-parameter (cons 'C '0va)))
+(define scale-range-min-max-pair/param (make-derived-parameter scale/param identity loc-scale->pitch-range-pair))
 
-(define offset-param (make-parameter 0))
+(define instr/param  (make-parameter 'AcousticGrand))
 
-(define kernel-param (make-parameter '(0 1 2 1)))
+(define file-name/param (make-parameter "test"))
 
-(define inits-param  (make-parameter '(2 1)))
+(define tempo/param (make-parameter (TempoDur 'Q 60)))
 
-(define instr-param  (make-parameter 'AcousticGrand))
+(define time-signature/param (make-parameter (TimeSignatureSimple 4 'Q)))
 
-(define file-name-param (make-parameter "test"))
+(define score-title/param (make-parameter "workspace"))
 
-(define tempo-param (make-parameter (TempoDur 'Q 60)))
+(define score-copyright/param (make-parameter "copyright"))
 
-;; override when (length (inits-param)) is 3, 5, etc, to unit or multiples
-(define beats-per-bar-param (make-parameter 4))
+;; Not for use with SplitStaff voices
+(define/contract (add-clefs clef voice-events)
+  (-> clef? (listof voice-event/c) (listof voice-event/c))
+  (add-bass-or-treble-clefs-to-voice-events voice-events clef))
 
-;; for when (length (kernel-param)) is even, when it's 3, 5, etc, make this 'SF or multiples of 'SF
-(define duration-per-beat-param (make-parameter 'Q))
+;; to use this, provide list of voice/c, consumes tempo/param, time-signature/param,
+;; score-title/param, score-copyright/param
+(define/contract (score/parameterized voices)
+  (-> (listof voice/c) Score?)
+  (let* ([voices-group (VoicesGroup (tempo/param) (time-signature/param) voices)]
+         [extended&aligned-voices-group (extend&align-voices-group-durations voices-group)])
+    (Score (score-title/param) (score-copyright/param) (list extended&aligned-voices-group))))
 
-(define time-signature (thunk (TimeSignatureSimple (beats-per-bar-param) (duration-per-beat-param))))
+;; consumes file-name/param, e.g.
+;; (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized)))
+;; parameterized:
+;;  (parameterize ([gens/param 4] [kernel/param '(3 2 1 -3)] [inits/param '(0 2 4 -1 -3 2)])
+;;    (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+(define/contract (gen-score-file score)
+  (-> Score? boolean?)
+  (let* ([output-file-name (string-append "test/" (file-name/param) ".ly")]
+         [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)])
+    (display (score->lily score) output-port)
+    (close-output-port output-port)
+    (system (format "lilypond -s -o test ~v" output-file-name))))
 
-(define score-title-param (make-parameter "workspace"))
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 
-(define score-copyright-param (make-parameter "copyright"))
+;; first target: try out transpose/iterate with default values as parameters
 
-(define shortest-dur-param (make-parameter 'SF))
+(define gens/param (make-parameter 2))
 
-;; wrap this with a let setting overrides to the default param vals above
+(define start-pitch/param (make-parameter (cons 'C '0va)))
+
+(define offset/param (make-parameter 0))
+
+(define kernel/param (make-parameter '(0 1 2 1)))
+
+(define inits/param  (make-parameter '(2 1)))
+
+(define shortest-dur/param (make-parameter 'SF))
+
+;; pattern: thunks defer parameter eval letting /parameterize 
+;; routines be customized inside a parameterize call
+
+;; wrap with a thunk to defer eval of parameters 
 (define/contract transpose/iterate/parameterized
   (-> (listof (listof pitch/c)))
   (thunk
-   (transpose/iterate (gens-param)
-                      (scale-param)
-                      (scale-range-min-max-pair-param)
-                      (start-pitch-param)
-                      (offset-param)
-                      (kernel-param)
-                      (inits-param))))
+   (transpose/iterate (gens/param)
+                      (scale/param)
+                      (scale-range-min-max-pair/param)
+                      (start-pitch/param)
+                      (offset/param)
+                      (kernel/param)
+                      (inits/param))))
 
 ;; given (length kernel) as multiplier between generations, compute uniform durations for pitches
 ;; for each generation as (expt kernel-length num-generation) starting from 1 e.g. for four gens,
@@ -82,72 +114,38 @@
 (define/contract simple-voices-durations/parameterized
   (-> (listof (listof duration?)))
   (thunk
-   (let ([shortest-dur  (duration->int (shortest-dur-param))]
-         [kernel-length (length (kernel-param))])
-     (map int->durations (reverse (sequence->list (take (gens-param) (iterate (curry * kernel-length) shortest-dur))))))))
+   (let ([shortest-dur  (duration->int (shortest-dur/param))]
+         [kernel-length (length (kernel/param))])
+     (map int->durations (reverse (sequence->list (take (gens/param) (iterate (curry * kernel-length) shortest-dur))))))))
 
-(define/contract (durs&mpit->notes-or-rests durs mpitch)
-  (-> (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))
-  (match mpitch
-    [(cons _ _)
-     (ctrls-durs&pit->notes '() durs mpitch)]
-     [#f
-      (map Rest durs)]))
-
-(define/contract (durs&pits->notes-or-rests durations mpitches)
+;; helpers do not refer to parameters
+;; NB: for each in mpitches, output is always (length durations)
+(define/contract (durs&mpits->notes-or-rests durations mpitches)
   (-> (listof duration?) (listof maybe-pitch/c) (listof (or/c Note? Rest?)))
-  (flatten (map (curry durs&mpit->notes-or-rests durations) mpitches)))
+  (flatten (map (curry ctrls-durs&mpit->notes-or-rests '() durations) mpitches)))
 
-;; deprecated with choice of SplitStaff voice
-(define/contract (add-clefs clef voice-events)
-  (-> clef? (listof voice-event/c) (listof voice-event/c))
-  (add-bass-or-treble-clefs-to-voice-events voice-events clef))
-
-(define/contract (add-key-signature voice-events)
+(define/contract (add-key-signature/parameterized voice-events)
   (-> (listof voice-event/c) (listof voice-event/c))
-  (cons (key-signature) voice-events))
+  (cons (key-signature/param) voice-events))
 
-(define/contract (add-clefs&key-signature voice-events)
-  (-> (listof voice-event/c) (listof voice-event/c))
-    (add-clefs 'Treble (add-key-signature voice-events)))
-
-(define/contract simple-iterated-voices/parameterized
+(define/contract transpose-iterate-voices/parameterized
   (-> (listof voice/c))
   (thunk
    (let* ([simple-mpitchess  (transpose/iterate/parameterized)]
           [simple-durationss (simple-voices-durations/parameterized)]
-          [notes-or-restss   (map durs&pits->notes-or-rests simple-durationss simple-mpitchess)]
-          [voice-eventss     (map add-key-signature notes-or-restss)])
-     (map (curry SplitStaffVoice (instr-param)) voice-eventss))))
+          [notes-or-restss   (map durs&mpits->notes-or-rests simple-durationss simple-mpitchess)]
+          [voice-eventss     (map add-key-signature/parameterized notes-or-restss)])
+     (map (curry SplitStaffVoice (instr/param)) voice-eventss))))
 
-(define/contract (voices-group/parameterized voices)
-  (-> (listof voice/c) VoicesGroup?)
-  (VoicesGroup (tempo-param) (time-signature) voices))
+#|
 
-(define/contract (score/parameterized voices-groups)
-  (-> (listof VoicesGroup?) Score?)
-  (Score (score-title-param) (score-copyright-param) voices-groups))
-
-(define/contract simple-iterated-score/parameterized
-  (-> Score?)
-  (thunk
-   (let* ([voices (simple-iterated-voices/parameterized)]
-          [voices-group (voices-group/parameterized voices)])
-     (score/parameterized (list voices-group)))))
-
-(define/contract gen-score-file/parameterized
-  (-> boolean?)
-  (thunk
-   (let* ([output-file-name (string-append "test/" (file-name-param) ".ly")]
-          [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)]
-          [score (simple-iterated-score/parameterized)])
-     (display (score->lily score) output-port)
-     (close-output-port output-port)
-     (system (format "lilypond -s -o test ~v" output-file-name)))))
+;; to generate using default parameter values:
+;;   (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized)))
 
 ;; Understanding transpose/iterate:  here's the reference kernel and inits.
 
-;; (parameterize ((gens-param 4) (kernel-param '(3 2 1 -3)) (inits-param '(0 2 4 -1 -3 2))) (gen-score-file/parameterized))
+  (parameterize ([gens/param 4] [kernel/param '(3 2 1 -3)] [inits/param '(0 2 4 -1 -3 2)])
+    (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
 
 ;; Length of kernel tells multiplier by (* num notes) per generation, where the unit at generation 0
 ;; is inits num notes so e.g. for kernel of 4 notes and inits of 6 notes, the counts goes 6 24 96 384
@@ -158,8 +156,6 @@
 ;; 1       2       3       4       5       6       
 ;; 1 1 1 1 1 1 2 2 2 2 2 2 3 3 3 3 3 3 4 4 4 4 4 4
 ;; shows the four repetitions of 6 in the faster voice for one repetition of 6 in the slower voice
-
-;; (parameterize ((gens-param 4) (kernel-param '(3 2 1 -3)) (inits-param '(0 2 4 -1 -3 2))) (gen-score-file/parameterized))
 
 ;; generation 0 is just inits relative to starting pitch (default <C 0va>) so C,0va E,0va G 0va, B 1vb, G 1vb, B 1vb)
 ;; and that's always layed out as the top voice
@@ -214,57 +210,69 @@
 ;; 1) short inits 4/5 notes
 ;; 2) kernels that start with small intervals; 1, 2 (second, third), 
 ;; 3) whole-tone scale
-;;
-;; (parameterize ((gens-param 4) (scale-param C-whole-tone) (kernel-param '(0 2 1 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
-;; (parameterize ((gens-param 5) (scale-param C-whole-tone) (kernel-param '(2 0)) (inits-param '(0 2 2 1 0))) (gen-score-file/parameterized))
 
+  (parameterize ([gens/param 4] [scale/param C-whole-tone] [kernel/param '(0 2 1 0)] [inits/param '(0 2 2 1 0)])
+    (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
+  (parameterize ([gens/param 5] [scale/param C-whole-tone] [kernel/param '(2 0)] [inits/param '(0 2 2 1 0)])
+    (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
 
 ;; ascending/descending:
-;;
-;; (parameterize ((beats-per-bar-param 12) (duration-per-beat-param 'S) (shortest-dur-param 'T) (gens-param 4) (scale-param C-whole-tone)
-;;   (kernel-param '(0 5 1 4 3 2)) (inits-param '(0 1 -1 2 -2 0))) (gen-score-file/parameterized))
-;;
-;; really boring, six note inits is easly heard wanging around the six note transposes from kernel-param,
+
+  (parameterize
+   ([time-signature/param (TimeSignature 12 'S)] [shortest-dur/param 'T] [gens/param 4] [scale/param C-whole-tone]
+    [kernel/param '(0 5 1 4 3 2)] [inits/param '(0 1 -1 2 -2 0)])
+      (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
+;; really boring, six note inits is easly heard wanging around the six note transposes from kernel/param,
 ;; everything fitting neatly inside other voices
 ;;
 ;; diverse lengths:
-;; 
-;; (parameterize ((beats-per-bar-param 12) (duration-per-beat-param 'S) (start-pitch-param (cons 'Ef '0va)) (shortest-dur-param 'T)
-;;   (gens-param 4) (scale-param Ef-major) (kernel-param '(0 5 -4)) (inits-param '(0 1 2 1))) (gen-score-file/parameterized))
-;;
+
+  (parameterize ([time-signature/param 12 'S] [start-pitch/param (cons 'Ef '0va)] [shortest-dur/param 'T]
+                [gens/param 4] [scale/param Ef-major] [kernel/param '(0 5 -4)] [inits/param '(0 1 2 1)])
+      (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
 ;; this gets play between 4 unit repetitions of inits vs. 3 unit transpositions from kernel, which plays out in 3x duration
 ;; relation between voices so voice 4 moves 3x faster than voice 3 and etc. for voices 2 and 1 while inits unit is 4 notes
 ;; so the faster voice fits in three reptitions of inits compared to 1 statement for the slower voice, something that's really
 ;; only audible in the last two (fastest) voices because the first move too slowly
-;;
-;;(parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 6 1 2))
-;;(inits-param '(-4 -7 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
-;;
+
+  (parameterize ([gens/param 4] [scale/param Ef-major] [start-pitch/param (cons 'Ef '0va)] [kernel/param '(0 6 1 2)]
+                 [inits/param '(-4 -7 -2)] [shortest-dur/param 'T])
+      (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
 ;; this gets kernel:inits ratio of 4:3 to show syncopation between pattern (inits) and transpositions (kernel)
-;; also, with shortest-dur-param of 'T, doesn't go romping off to 'SF by default
+;; also, with shortest-dur/param of 'T, doesn't go romping off to 'SF by default
 ;;
 ;; example of recreating from just midi file which turned out to be a morning's worth of effort
 ;; easy enough to recreate key signature, but needed to remember starting pitch to get inits first
 ;; from first voice, then kernel by count of repetitions from second voice
 ;;
 ;; what about a 2x rhythmic ratio between voices via a kernel and a long inits:
-;;
-;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3))
-;;  (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
-;;
+
+ (parameterize ([gens/param 4] [scale/param Ef-major] [start-pitch/param (cons 'Ef '0va)] 
+                [kernel/param '(0 3)] [inits/param '(-1 0 3 3 2 2 6 -2)] [shortest-dur/param 'T])
+      (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
 ;; gets you a frozen-while-flying or stroboscopic effect with each voice going 2x faster than next voice, 
 ;; a simultaneous slo-mo
-;;
-;; (parameterize ((gens-param 4) (scale-param Ef-major) (start-pitch-param (cons 'Ef '0va)) (kernel-param '(0 3 4 2))
-;; (inits-param '(-1 0 3 3 2 2 6 -2)) (shortest-dur-param 'T)) (gen-score-file/parameterized))
-;;
+
+  (parameterize ([gens/param 4] [scale/param Ef-major] [start-pitch/param (cons 'Ef '0va)]
+                 [kernel/param '(0 3 4 2)] [inits/param '(-1 0 3 3 2 2 6 -2)] [shortest-dur/param 'T])
+      (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized))))
+
+;; regularity of rhythmic proportions between voices gets stale really fast
+;; slower voices slow down really fast
+;; application of self-similarity seems too simple-minded
+
+|#
 
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
-;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
-;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 
-;; Next: experiment with octatonic scales and generators
+;; Next: experiment with octatonic, whole-tone, and mixed diatonic scales
+;; input to generator of randomly weighted descending intervals, durations and repeats.
 ;;
 ;; Inner pattern generator takes scale and high and low pitches for range.
 ;; Implement nested generators 
@@ -279,242 +287,127 @@
 ;;    randomly weighted toward 1
 ;;    -- this is weighted-repeats-generator
 ;;
-;; problem is that with stacked generators I'll get repeats of #f which is not what I want, or is it?
-;; 
-;; generators.rkt> (define ig (sequence->generator '(1 2 3 4 5 6 7 8 9)))
-;; generators.rkt> (define mg (weighted-maybe-generator '(1 1) ig))
-;; generators.rkt> (define og (weighted-repeats-generator '(1 1 1) '(1 2 3)) mg)
-;; generators.rkt> (og)
-;; '(#f #f #f)
-;; generators.rkt> (og)
-;; '(#f #f #f)
-;; generators.rkt> (og)
-;; '(3 3 3)
-;; generators.rkt> (og)
-;; '(#f #f)
-;; generators.rkt> (og)
-;; '(#f #f)
-;; generators.rkt> (og)
-;; '(6 6 6)
-;; generators.rkt> (og)
-;; '(7 7)
-;; generators.rkt> (og)
-;; '(#f #f)
-;; generators.rkt> (og)
-;; '(9 9)
-;;
-;; Outer generator keeps scale constant and progresses range and span from narrow/high to wide/low or reverse
-;;
-;; What is output from combined generators?  Note that generator-generator keeps calling inner-gen until it's
-;; done, then starts new inner-gen with next result from outer-gen.
-;;
-;; Just work through them one-by-one first.
-;;
-;; a) random sequence descending seconds and thirds
-;;    - inputs: weights, intervals, scale, pitch-range-pair/c
-;;    - output: pitch/c until 'done
-;;    - impl:   generate-while
-;;              * pred tests if (gen) is within range
-;;              * gen:
-;;                - inputs: weights, intervals, scale, pitch/c (high)
-;;                - state:  
-;;                    static:  buckets
-;;                    dynamic: previously-answered pitch/c
-;;                - impl:
-;;                    * pick bucket for random, interval for bucket
-;;                    * answer transposition of previous pitch with new interval
-;;                          
-;; see weighted-list-intervals-generator, this is level 0
-;;
-;; 
+
 (define C-whole-oct (octatonic-whole-scale 'C))
-;;
-;; (generate-while (const #t) reps-g)
-;;
-;; experimental mapping from (non-empty-listof (or/c #f pitch/c)) -> (non-empty-listof (or/c Rest? Note?))
-;; - #f -> Rest
-;; - pitch/c -> Note
-;; question is duration and (for Note) accent
-;; - for list of Note, pick a duration, more elements -> shorter the duration, pick randomly from list
-;;   for different lengths
-;; - do the same for list of Rest
-;;
-;; might as well be a generator-map with function
-;; (-> (non-empty-listof (or/c #f pitch/c)) (non-empty-listof (or/c Rest? Note?)))
-;; that takes weights and durations lists
-(define/contract (fs-or-pitches->rests-or-notes weights durations)
-  (-> (non-empty-listof exact-positive-integer?) ;; weights
-      (non-empty-listof duration?) ;; durations, must be same lengths
-      (-> (non-empty-listof (or/c #f pitch/c)) (non-empty-listof (or/c Rest? Note?))))
-  (unless (= (length weights) (length durations))
-    (error 'fs-or-pitches->rests-or-notes "unequal lengths of weights ~v and durations ~v" weights durations))
-  (let* ([buckets (gen-buckets weights)])
-    (lambda (fs-or-pitches)
-     (let* ([r (random)]
-            [ix (list-index (lambda (bucket) (<= r bucket)) buckets)]
-            [dur (list-ref durations ix)])
-      (match (car fs-or-pitches)
-        [#f
-         (repeat (length fs-or-pitches) (Rest dur))]
-        [(cons p o)
-         (repeat (length fs-or-pitches) (Note p o dur '() #f))])))))
 
-;; inputs:
-;; - intervals:    weights, intervals, start, stop
-;; - maybes:       weights for (val) vs. #f
-;; - repetitions:  weights, repetitions
-;; - durations:    weights, durations
-;;
-;; between voices:
-;; - constant:  intervals, but with different generators for each voice
-;;              maybes, ditto
-;; - varied:    repeats, with most in highest voice, fewest in lowest voice
-;;              durations, shortest in high voice, slowest in owest voice
-;;
-;; do it direct, forget parameterization for now
-;; 
-(define/contract (gen-ints scale weights intervals pitch-range)
-  (-> Scale? (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?) pitch-range-pair/c generator?)
-  (weighted-intervals-generator weights intervals scale pitch-range))
+(define/contract (dur&fs-or-pitches->rests-or-notes dur fs-or-pitches)
+  (-> duration? (non-empty-listof (or/c #f pitch/c)) (non-empty-listof (or/c Rest? Note?)))
+  (let ([cnt (length fs-or-pitches)])
+    (match (car fs-or-pitches)
+      [#f         (repeat cnt (Rest dur))]
+      [(cons p o) (repeat cnt (Note p o dur '() #f))])))
 
-(define/contract (gen-maybes weights gen)
-  (-> (non-empty-listof exact-positive-integer?) generator? generator?)
-  (weighted-maybe-generator weights gen))
+(define repeat/c 
+  (make-flat-contract #:name 'repeat/c #:first-order exact-positive-integer?))
 
-(define/contract (gen-repeats weights repeats gen)
-  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof exact-positive-integer?) generator? generator?)
-  (weighted-repeats-generator weights repeats gen))
+(define weight&repeatss/c
+  (make-flat-contract #:name 'weight&repeatss/c #:first-order (non-empty-listof (list/c relative-weight/c repeat/c))))
 
-(define/contract (gen-rests-or-notes weights durations gen)
-  (-> (non-empty-listof exact-positive-integer?) (non-empty-listof duration?) generator? generator?)
-  (generator-map (fs-or-pitches->rests-or-notes weights durations) gen))
-
-(define/contract (gen-voice-events scale weights-intervals-pr pitch-range weights-maybes weights-repeats-pr weights-durations-pr)
-  (-> Scale?
-      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-integer?))
-      pitch-range-pair/c
-      (non-empty-listof exact-positive-integer?)
-      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof exact-positive-integer?))
-      (cons/c (non-empty-listof exact-positive-integer?) (non-empty-listof duration?))
-      generator?)
-  (let* ([ints-gen (gen-ints scale (car weights-intervals-pr) (cdr weights-intervals-pr) pitch-range)]
-         [maybes-gen (gen-maybes weights-maybes ints-gen)]
-         [repeats-gen (gen-repeats (car weights-repeats-pr) (cdr weights-repeats-pr) maybes-gen)])
-    (gen-rests-or-notes (car weights-durations-pr) (cdr weights-durations-pr) repeats-gen)))
-
-(define weights/c 
-  (make-flat-contract #:name 'weights/c #:first-order (non-empty-listof exact-positive-integer?)))
-
-(define intervals/c 
-  (make-flat-contract #:name 'intervals/c #:first-order (non-empty-listof exact-integer?)))
-
-(define repeats/c 
-  (make-flat-contract #:name 'repeats/c #:first-order (non-empty-listof exact-positive-integer?)))
-
-(define durations/c 
-  (make-flat-contract #:name 'durations/c #:first-order (non-empty-listof duration?)))
-
-(define weights&intervals/c
-  (make-flat-contract #:name 'weights&intervals/c #:first-order (cons/c weights/c intervals/c)))
-
-(define weights&repeats/c
-  (make-flat-contract #:name 'weights&repeats/c #:first-order (cons/c weights/c repeats/c)))
-
-(define weights&durations/c
-  (make-flat-contract #:name 'weights&durations/c #:first-order (cons/c weights/c durations/c)))
+(define weight&durationss/c
+  (make-flat-contract #:name 'weight&durationss/c #:first-order (non-empty-listof (list/c relative-weight/c duration?))))
 
 (define piano/param (make-parameter 'AcousticGrand))
 
 (define high-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '0va))))
 
+(define high-start-pitch (make-parameter (cons 'C '8va)))
+
 (define mid-pitch-range/param (make-parameter (cons (cons 'Fs '8va) (cons 'Fs '8vb))))
+
+(define mid-start-pitch (make-parameter (cons 'C '0va)))
 
 (define low-pitch-range/param (make-parameter (cons (cons 'C '0va) (cons 'C '15vb))))
 
-(define descending-weights&intervals/param (make-parameter (cons '(5 1) '(-1 -2))))
+(define low-start-pitch (make-parameter (cons 'C '8vb)))
 
-(define weights/rests/param (make-parameter '(5 1)))
+(define descending-weight&intervalss/param (make-parameter (list (list 5 -1) (list 1 -2))))
 
-(define weights&repeats/param (make-parameter (cons '(15 5 1) '(1 2 3))))
+(define weights/rests/param (make-parameter (cons 5 1)))
 
-(define weights&durations/param (make-parameter (cons '(8 2 1) '(S E Q))))
+(define weight&repeat-prs/param (make-parameter (list (list 15 1) (list 5 2) (list 1 3))))
 
-(struct/contract VoiceParams ([instr             instr?]
-                              [scale             Scale?]
-                              [pitch-range       pitch-range-pair/c]
-                              [weights&intervals weights&intervals/c]
-                              [weights/rests     weights/c]
-                              [weights&repeats   weights&repeats/c]
-                              [weights&durations weights&durations/c]))
+(define weight&duration-prs/param (make-parameter (list (list 8 'S) (list 2 'E) (list 1 'Q))))
+
+(struct/contract VoiceParams ([instr               instr?]
+                              [scale               Scale?]
+                              [start-pitch         pitch/c]
+                              [pitch-range         pitch-range-pair/c]
+                              [weight&intervalss   weight&intervalss/c]
+                              [weights/rests       (cons/c relative-weight/c relative-weight/c)]
+                              [weight&repeat-prs   weight&repeatss/c]
+                              [weight&duration-prs weight&durationss/c]))
+
+(define/contract (gen-voice-events scale start-pitch weight&intervalss pitch-range-pr weights-maybe-pr weight&repeat-prs weight&duration-prs)
+  (-> Scale?
+      pitch/c
+      weight&intervalss/c
+      pitch-range-pair/c
+      (cons/c relative-weight/c relative-weight/c)
+      weight&repeatss/c
+      weight&durationss/c
+      generator?)
+  (let* ([pitch-gen         (weighted-intervals->pitches/generator scale pitch-range-pr start-pitch weight&intervalss)]
+         [pitch-or-f-gen    (weighted-maybe/generator weights-maybe-pr pitch-gen)]
+         [cnt-gen           (weighted-list-element/generator weight&repeat-prs)]
+         [pitches-or-fs-gen (combine-generators/generator repeat cnt-gen pitch-or-f-gen)]
+         [dur-gen           (weighted-list-element/generator weight&duration-prs)])
+    (combine-generators/generator dur&fs-or-pitches->rests-or-notes dur-gen pitches-or-fs-gen)))
 
 (define voice-high/param
   (thunk (VoiceParams (piano/param)
                       C-major
+                      (high-start-pitch)
                       (high-pitch-range/param)
-                      (descending-weights&intervals/param)
+                      (descending-weight&intervalss/param)
                       (weights/rests/param)
-                      (weights&repeats/param)
-                      (weights&durations/param))))
+                      (weight&repeat-prs/param)
+                      (weight&duration-prs/param))))
 
 (define voice-mid/param
   (thunk (VoiceParams (piano/param)
                       C-major
+                      (mid-start-pitch)
                       (mid-pitch-range/param)
-                      (descending-weights&intervals/param)
+                      (descending-weight&intervalss/param)
                       (weights/rests/param)
-                      (weights&repeats/param)
-                      (weights&durations/param))))
+                      (weight&repeat-prs/param)
+                      (weight&duration-prs/param))))
 
 (define voice-low/param
   (thunk (VoiceParams (piano/param)
                       C-major
+                      (low-start-pitch)
                       (low-pitch-range/param)
-                      (descending-weights&intervals/param)
+                      (descending-weight&intervalss/param)
                       (weights/rests/param)
-                      (weights&repeats/param)
-                      (weights&durations/param))))
+                      (weight&repeat-prs/param)
+                      (weight&duration-prs/param))))
 
-(define voices/param (thunk (list (voice-high/param) (voice-mid/param) (voice-low/param))))
+(define voices-params/param (thunk (list (voice-high/param) (voice-mid/param) (voice-low/param))))
 
 (define/contract (gen-voice-events/params params)
   (-> VoiceParams? generator?)
   (gen-voice-events (VoiceParams-scale params)
-                    (VoiceParams-weights&intervals params)
+                    (VoiceParams-start-pitch params)
+                    (VoiceParams-weight&intervalss params)
                     (VoiceParams-pitch-range params)
                     (VoiceParams-weights/rests params)
-                    (VoiceParams-weights&repeats params)
-                    (VoiceParams-weights&durations params)))
+                    (VoiceParams-weight&repeat-prs params)
+                    (VoiceParams-weight&duration-prs params)))
 
-(define/contract generated-voices/param
+(define/contract voice-param-voices/parameterized
   (-> (listof voice/c))
   (thunk
-   (let* ([notes-or-restss-gens (map gen-voice-events/params (voices/param))]
+   (let* ([notes-or-restss-gens (map gen-voice-events/params (voices-params/param))]
           [notes-or-rests       (map (lambda (gen) (apply append (generate-while (const #t) gen))) notes-or-restss-gens)]
-          [voice-eventss        (map add-key-signature notes-or-rests)])
-     (map (curry SplitStaffVoice (instr-param)) voice-eventss))))
+          [voice-eventss        (map add-key-signature/parameterized notes-or-rests)])
+     (map (curry SplitStaffVoice (instr/param)) voice-eventss))))
 
-(define/contract score-2/parameterized
-  (-> Score?)
-  (thunk
-   (let* ([voices (generated-voices/param)]
-          [voices-group (voices-group/parameterized voices)])
-     (score/parameterized (list (extend&align-voices-group-durations voices-group))))))
-
-(define/contract gen-score-2-file/parameterized
-  (-> boolean?)
-  (thunk
-   (let* ([output-file-name (string-append "test/" (file-name-param) ".ly")]
-          [output-port (open-output-file output-file-name #:mode 'text #:exists 'replace)]
-          [score (score-2/parameterized)])
-     (display (score->lily score) output-port)
-     (close-output-port output-port)
-     (system (format "lilypond -s -o test ~v" output-file-name)))))
-
-;; (parameterize
-;;     ((scale-param C-whole-tone)
-;;      (descending-weights&intervals/param (cons '(1 1 2) '(-1 1 -2)))
-;;      (high-pitch-range/param (cons (cons 'E '15va) (cons 'C '15vb)))
-;;      (mid-pitch-range/param  (cons (cons 'C '15va) (cons 'C '15vb)))
-;;      (low-pitch-range/param  (cons (cons 'A '15va) (cons 'C '15vb))))
-;;   (gen-score-2-file/parameterized))
+#;(parameterize
+    ((scale/param                          C-whole-tone)
+     (descending-weight&intervalss/param   (list (list 1 -1) (list 1 1) (list 2 -2)))
+     (high-pitch-range/param               (cons (cons 'E '15va) (cons 'C '15vb)))
+     (mid-pitch-range/param                (cons (cons 'C '15va) (cons 'C '15vb)))
+     (low-pitch-range/param                (cons (cons 'A '15va) (cons 'C '15vb))))
+  (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 

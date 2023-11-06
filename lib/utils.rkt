@@ -3,6 +3,8 @@
 ;; utils: routines with no internal dependencies
 
 (provide
+ ;; exact-positive-integer? for use as first element of pair in weighted-list
+ relative-weight/c
  
  (contract-out
   ;; rotate list forward or backward for positive
@@ -19,7 +21,7 @@
   [group-by-adjacent-sequences (-> (-> any/c any/c boolean?) (listof any/c) (listof (listof any/c)))]
 
   ;; (gen-buckets '(1 1 4)) -> '(1/6 1/3 1)
-  [gen-buckets (-> (non-empty-listof exact-positive-integer?) (non-empty-listof positive?))]
+  [gen-buckets (-> (non-empty-listof relative-weight/c) (non-empty-listof positive?))]
  
   ;; '() -> '()
   ;; '(1) -> '()
@@ -42,6 +44,9 @@
 
 ;; - - - - - - - - -
 ;; implementation
+
+(define relative-weight/c
+  (make-flat-contract #:name 'relative-weight/c #:first-order exact-positive-integer?))
 
 (define (inits l)
   (if (null? l)

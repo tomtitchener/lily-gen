@@ -37,6 +37,9 @@
  pitch-range-pair/c
 
  ;; interval is exact-integer? for positive and negative
+ interval/c
+
+ ;; maybe-interval is (or/c interval/c #f)
  maybe-interval/c
  
  ;; - - - - - - - - -
@@ -88,10 +91,15 @@
                           pitch/c
                           (or/c maybe-interval/c (listof maybe-interval/c))
                           (or/c maybe-pitch/c (listof maybe-pitch/c)))]
+
+  [transpose/unguarded (-> Scale? pitch/c pitch-range-pair/c maybe-interval/c maybe-pitch/c)]
   
   ;; minimum and maximum pitches for a scale
   [scale->pitch-range-pair (-> Scale? pitch-range-pair/c)]
 
+  ;; maximum pitches for a scale
+  [scale->max-idx (-> Scale? natural-number/c)]
+  
   ;; all pitches for a scale in ascending order
   ;; - if optional pitch-range-pair/c then ascending or descending sub-range within all pitches for scale
   ;; - if additional natural-number/c then in steps by value (default 1)
@@ -127,8 +135,11 @@
 
 (require (only-in lily-gen/lib/unfold iterate-list-comprehension-sum))
 
+(define interval/c
+  (make-flat-contract #:name 'interval/c #:first-order exact-integer?))
+
 (define maybe-interval/c
-  (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c exact-integer? false/c)))
+  (make-flat-contract #:name 'maybe-interval/c #:first-order (or/c interval/c false/c)))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -410,11 +421,11 @@
 (define (xpose scale pitch-range-pair pitch interval)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'xpose "one of pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (xpose/internal scale pitch pitch-range-pair interval))
+  (transpose/unguarded scale pitch pitch-range-pair interval))
 
 ;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
-(define/contract (xpose/internal scale pitch pitch-range-pair maybe-interval)
+(define/contract (transpose/unguarded scale pitch pitch-range-pair maybe-interval)
   (-> Scale? pitch/c pitch-range-pair/c maybe-interval/c maybe-pitch/c)
   (if maybe-interval
       (let* ([pitch-idx (pitch->index scale pitch)]
@@ -430,24 +441,23 @@
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
   (if (list? maybe-interval/maybe-intervals)
-      (map (lambda (interval) (xpose/internal scale pitch pitch-range-pair interval)) (scanl (op-maybe +) maybe-interval/maybe-intervals))
-      (xpose/internal scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
+      (map (lambda (interval) (transpose/unguarded scale pitch pitch-range-pair interval)) (scanl (op-maybe +) maybe-interval/maybe-intervals))
+      (transpose/unguarded scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (or/c maybe-interval? (listof maybe-interval?)) (or/c maybe-pitch/c (listof maybe-pitch/c)))
 (define (transpose/absolute scale pitch-range-pair pitch maybe-interval/maybe-intervals)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'transpose/absolute "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
   (if (list? maybe-interval/maybe-intervals)
-      (map (lambda (maybe-interval) (xpose/internal scale pitch pitch-range-pair maybe-interval)) maybe-interval/maybe-intervals)
-      (xpose/internal scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
+      (map (lambda (maybe-interval) (transpose/unguarded scale pitch pitch-range-pair maybe-interval)) maybe-interval/maybe-intervals)
+      (transpose/unguarded scale pitch pitch-range-pair maybe-interval/maybe-intervals)))
 
 ;; the max index for a list of pitches for the scale
 ;; starting from 0 to the final index, inclusive
 ;; - diatonic scales (major, harmonic minor): (0 . 55) 
 ;; - whole-tone scales: (0 . 47)
 ;; - chromatic scales: (0 . 5)]
-(define/contract (scale->max-idx scale)
-  (-> Scale? natural-number/c)
+(define (scale->max-idx scale)
   (let ([cnt-pcs  (length (Scale-pitch-classes scale))]
         [cnt-octs (length octave-syms)])
     (sub1 (* cnt-octs cnt-pcs))))

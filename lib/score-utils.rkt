@@ -18,9 +18,11 @@
   ;; multiply num  and duration->int for first and last elements of pair
   [num-denom-pr->barlen (-> num-denom/c natural-number/c)]
 
-  [ctrls-durs&pit->notes (-> (listof control/c) (listof duration?) pitch/c (listof Note?))]
+  [ctrls-durs&pit->notes (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Note?))]
   
-  [ctrls-durs&pits->chords (-> (listof control/c) (listof duration?) pitch/c (listof Chord?))]
+  [ctrls-durs&pits->chords (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Chord?))]
+
+  [ctrls-durs&mpit->notes-or-rests (-> (listof control/c) (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))]
 
   [add-bass-or-treble-clefs-to-voice-events (-> (listof voice-event/c) clef? (listof voice-event/c))]))
 
@@ -60,25 +62,42 @@
 (define (num-denom-pr->barlen num-denom-pr)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
 
-;; (-> (listof control/c) (listof duration?) pitch/c (listof Note?))
-(define (ctrls-durs&pit->notes ctrls durations pitch)
-  (cond [(null? durations) '()]
-        [(= 1 (length durations))
-         (cons (Note (car pitch) (cdr pitch) (car durations) ctrls #f)
-               (ctrls-durs&pit->notes ctrls (cdr durations) pitch))]
-        [else
-         (cons (Note (car pitch) (cdr pitch) (car durations) ctrls #t)
-               (ctrls-durs&pit->notes ctrls (cdr durations) pitch))]))
+;; (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Note?))
+(define (ctrls-durs&pit->notes controls durations pitch)
+  (let ([pitch-class (car pitch)]
+        [octave      (cdr pitch)])
+    (let loop ([durs  durations]
+               [ctrls controls])
+      (cond [(= 1 (length durs))
+             (list (Note pitch-class octave (car durs) ctrls #f))]
+            [else
+             (cons (Note pitch-class octave (car durs) ctrls #t)
+                   (loop (cdr durs) '()))]))))
 
-;; (-> (listof control/c) (listof duration?) (listof pitch/c) (listof Chord?))
+(module+ test
+  (require rackunit)
+  (check-equal?
+   (ctrls-durs&pit->notes '(Accent) '(E) (cons 'C '0va))
+   (list (Note 'C '0va 'E '(Accent) #f)))
+  (check-equal?
+   (ctrls-durs&pit->notes '(Accent) '(E Q) (cons 'C '0va))
+   (list (Note 'C '0va 'E '(Accent) #t) (Note 'C '0va 'Q '() #f)))
+  (check-equal?
+   (ctrls-durs&pit->notes '(Accent) '(E Q W) (cons 'C '0va))
+   (list (Note 'C '0va 'E '(Accent) #t) (Note 'C '0va 'Q '() #t) (Note 'C '0va 'W '() #f))))
+
+(define (ctrls-durs&mpit->notes-or-rests ctrls durs mpitch)
+  (match mpitch
+    [#f         (map Rest durs)]
+    [(cons _ _) (ctrls-durs&pit->notes ctrls durs mpitch)]))
+
+;; (-> (listof control/c) (non-empty-listof duration?) (listof pitch/c) (listof Chord?))
 (define (ctrls-durs&pits->chords ctrls durations pitches)
-  (cond [(null? durations) '()]
-        [(= 1 (length durations))
-         (cons (Chord pitches (car durations) ctrls #f)
-               (ctrls-durs&pits->chords ctrls (cdr durations) pitches))]
+  (cond [(= 1 (length durations))
+         (list (Chord pitches (car durations) ctrls #f))]
         [else
          (cons (Chord pitches (car durations) ctrls #t)
-               (ctrls-durs&pits->chords ctrls (cdr durations) pitches))]))
+               (ctrls-durs&pits->chords '() (cdr durations) pitches))]))
 
 ;; (-> (listof voice-event/c) clef? (listof voice-event/c))
 (define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)
