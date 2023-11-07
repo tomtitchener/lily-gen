@@ -399,15 +399,29 @@
   (-> (listof voice/c))
   (thunk
    (let* ([notes-or-restss-gens (map gen-voice-events/params (voices-params/param))]
-          [notes-or-rests       (map (lambda (gen) (apply append (generate-while (const #t) gen))) notes-or-restss-gens)]
+          [notes-or-rests       (map (lambda (gen) (apply append (while/generator->list (const #t) gen))) notes-or-restss-gens)]
           [voice-eventss        (map add-key-signature/parameterized notes-or-rests)])
      (map (curry SplitStaffVoice (instr/param)) voice-eventss))))
 
-#;(parameterize
+#|
+
+;; Well, it all works.  But the result, when customized to span a longer stretch than this
+;; example, is sort of chaotic, with voices sharing the most general of features like the
+;; overall descending dirction, the intermittent repetition.  It's the usual problem where
+;; I take too atomized an approach, manipulating the lowest-level components, randomizing
+;; at a level too abstract for any recognizable organization.
+
+  (parameterize
     ((scale/param                          C-whole-tone)
-     (descending-weight&intervalss/param   (list (list 1 -1) (list 1 1) (list 2 -2)))
+     (descending-weight&intervalss/param   (list (list 2 -1) (list 1 1) (list 2 -2)))
      (high-pitch-range/param               (cons (cons 'E '15va) (cons 'C '15vb)))
      (mid-pitch-range/param                (cons (cons 'C '15va) (cons 'C '15vb)))
      (low-pitch-range/param                (cons (cons 'A '15va) (cons 'C '15vb))))
   (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
+|#
+
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
+
+;; next target: try generate-weighted-motifs

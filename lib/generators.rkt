@@ -56,18 +56,13 @@
   ;; is for #f
   [weighted-maybe/generator (-> (cons/c relative-weight/c relative-weight/c) generator? generator?)]
 
-  ;; TBD: every other routine answers a generator and it's up to the caller to decide
-  ;; how to use it.  This feels out of place answers a list instead of a generator.
-  ;;
-  ;; See (in/generator gen (void)) which answers a sequence, so you could say sequence->list
-  ;; with the result to get a list.
-  ;;
-  ;; Similarly, see sequence-map as a way to implement map/generator trivially
-  ;;
   ;; generate until predicate fails or generator-state is done,
   ;; supply (const #t) as predicate to collect all output as a list
-  [generate-while (-> predicate/c generator? (listof any/c))]
+  [while/generator (-> predicate/c generator? generator?)]
 
+  ;; force generator? until (not predicate/c)
+  [while/generator->list (-> predicate/c generator? (listof any/c))]
+  
   ;; (yield (op (generator1) (generator2)) unless either of generator1 or generator2 are 'done
   [combine-generators/generator (-> (-> any/c any/c any/c) generator? generator? generator?)]
 
@@ -171,13 +166,15 @@
                [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
           (yield (list-ref elements ix)))))]))
 
-;; (-> Scale? pitch-range-pair/c pitch/c weight&intervalss/c generator?)
+;; (-> Scale? pitch-range-pair/c pitch/c weight&intervalss/c generator?), stops on #f
 (define (weighted-intervals->pitches/generator scale pitch-range-pair start-pitch weight&intervalss)
-  (foldl/generator
-   (lambda (interval prev-pitch)
-     (transpose/unguarded scale prev-pitch pitch-range-pair interval))
-   start-pitch
-   (weighted-list-element/generator weight&intervalss)))
+  (while/generator
+   identity
+   (foldl/generator
+    (lambda (interval prev-pitch)
+      (transpose/unguarded scale prev-pitch pitch-range-pair interval))
+    start-pitch
+    (weighted-list-element/generator weight&intervalss))))
 
 (module+ test
   (require rackunit)
@@ -191,7 +188,7 @@
          [pitch-range-pr (scale->pitch-range-pair scale)]
          [weight&intervalss (list (list 1 1) (list 1 -2) (list 1 -3))]
          [pitches-gen (weighted-intervals->pitches/generator C-major pitch-range-pr start-pitch weight&intervalss)])
-    (let ([pitches (generate-while (compose not (done? 10)) pitches-gen)])
+    (let ([pitches (while/generator->list (compose not (done? 10)) pitches-gen)])
         (foldl (lambda (pitch prev-pitch)
                  (check-true (ormap (lambda (i) (equal? pitch (xpose scale pitch-range-pr prev-pitch i)))
                                     (map second weight&intervalss)))
@@ -261,41 +258,41 @@
             (loop (gen1) (gen2)))))))
   
 ;; (-> predicate/c generator? (listof any/c))
-(define (generate-while pred gen)
-  (let loop ()
-    (let ([next (gen)])
-      (cond [(eq? 'done (generator-state gen)) '()]
-            [(pred next) (cons next (loop))]
-            [else '()]))))
+(define (while/generator->list pred gen)
+  (sequence->list (in-producer (while/generator pred gen) (void))))
+
+;; (-> predicate/c generator? generator?)
+(define (while/generator pred gen)
+  (generator  ()
+    (let loop ()
+      (let ([next (gen)])
+        (cond [(or (eq? 'done (generator-state gen))
+                   (not (pred next)))
+               (void)]
+              [else
+               (yield next)
+               (loop)])))))
 
 ;; (-> (-> any/c any/c) generator? generator?)
 (define (map/generator fun gen)
   (generator ()
-    (let loop ()
-      (let ([val (gen)])
-        (if (symbol=? 'done (generator-state gen))
-            (void)
-            (begin
-              (yield (fun val))
-              (loop)))))))
+    (let loop ([val (gen)])
+      (if (symbol=? 'done (generator-state gen))
+          (void)
+          (begin
+            (yield (fun val))
+            (loop (gen)))))))
 
-;; e.g. (gen) tells next maybe-interval, init tells start-pitch
-;; and acc is transposition of prev-pitch with interval to
-;; carry prev-pitch through list of intervals from start-pitch
-;; terminates at 'done generator-state for gen or #f for (gen)
-;; 
 ;; (-> (-> any/c any/c any/c) any/c generator? generator?)
 (define (foldl/generator fun init gen)
   (generator ()
     (let loop ([g (gen)]
-               [a init]) 
-      (if (or (symbol=? 'done (generator-state gen))
-              (not a)
-              (not g))
+               [a init])
+      (if (symbol=? 'done (generator-state gen))
           (void)
           (let ([acc (fun g a)])
             (yield acc)
-            (loop (gen) acc))))))
+            (loop g acc))))))
 
 (module+ test
   (require rackunit)
@@ -307,7 +304,7 @@
          [note-or-rest-gen (note-or-rest/generator pitch-or-f-gen duration-gen accent-or-f-gen)]
          [max-duration-int 100]
          [sum-note-or-rest-durations<=? (sum<=? voice-event->duration-int max-duration-int)]
-         [note-or-rests (generate-while sum-note-or-rest-durations<=? note-or-rest-gen)])
+         [note-or-rests (while/generator->list sum-note-or-rest-durations<=? note-or-rest-gen)])
     (check-equal? note-or-rests
                  (list
                   (Note 'C '0va 'E '(Accent) #f)
@@ -324,35 +321,35 @@
         [seven-eight-time-signature (TimeSignatureGrouping (list 2 2 3) 7 'E)]
         [seven-eight-six-eight-time-signature (TimeSignatureCompound (list (list 2 2 3 'E) (list 2 2 2 'E)))]
         [length<=? (lambda (m) (sum<=? (lambda (_) 1) m))])
-    (check-equal? (generate-while (length<=? 3) (time-signature->num-denom/generator three-four-time-signature))
+    (check-equal? (while/generator->list (length<=? 3) (time-signature->num-denom/generator three-four-time-signature))
                   '((3 . Q) (3 . Q) (3 . Q)))
-    (check-equal? (generate-while (length<=? 6) (time-signature->num-denom/generator seven-eight-time-signature))
+    (check-equal? (while/generator->list (length<=? 6) (time-signature->num-denom/generator seven-eight-time-signature))
                   '((2 . E) (2 . E) (3 . E) (2 . E) (2 . E) (3 . E)))
-    (check-equal? (generate-while (length<=? 9) (time-signature->num-denom/generator seven-eight-six-eight-time-signature))
+    (check-equal? (while/generator->list (length<=? 9) (time-signature->num-denom/generator seven-eight-six-eight-time-signature))
                   '((2 . E) (2 . E) (3 . E) (2 . E) (2 . E) (2 . E) (2 . E) (2 . E) (3 . E))))
   (let* ([elements-list '(a b c d)]
          [weighted-list-gen (weighted-list-element/generator (sequence->list (zip '(1 1 1 1) elements-list)))])
     (for ((_ (in-range 100))) (check member (weighted-list-gen) elements-list)))
-  (check-equal? (generate-while identity (scale-steps/generator C-major '(C . 0va) 7))
+  (check-equal? (while/generator->list identity (scale-steps/generator C-major '(C . 0va) 7))
                 '((C . 0va) (D . 0va) (E . 0va) (F . 0va) (G . 0va) (A . 0va) (B . 0va)))
-  (check-equal? (generate-while identity (scale-steps/generator C-major (cons 'C '0va) -7))
+  (check-equal? (while/generator->list identity (scale-steps/generator C-major (cons 'C '0va) -7))
                 '((C . 0va) (B . 8vb) (A  . 8vb) (G . 8vb) (F . 8vb) (E . 8vb) (D . 8vb)))
   (let* ([outer (scale-steps/generator C-major (cons 'C '8vb) 3)]
          [gen-inner (lambda (pitch) (scale-steps/generator C-major pitch 3))]
          [gen-gen (generator/generator gen-inner outer)])
-    (check-equal? (generate-while identity gen-gen)
+    (check-equal? (while/generator->list identity gen-gen)
                   '((C . 8vb) (D . 8vb) (E . 8vb) (D . 8vb) (E . 8vb) (F . 8vb) (E . 8vb) (F . 8vb) (G . 8vb))))
   (let* ([outer (scale-steps/generator C-major (cons 'C '8vb) -3)]
          [gen-inner (lambda (pitch) (scale-steps/generator C-major pitch 3))]
          [gen-gen (generator/generator gen-inner outer)])
-    (check-equal? (generate-while identity gen-gen)
+    (check-equal? (while/generator->list identity gen-gen)
                   '((C . 8vb) (D . 8vb) (E . 8vb) (B . 15vb) (C . 8vb) (D . 8vb) (A . 15vb) (B . 15vb) (C . 8vb))))
   (let* ([outer (scale-steps/generator C-major (cons 'C '8vb) -3)]
          [gen-inner (lambda (pitch) (scale-steps/generator C-major pitch -3))]
          [gen-gen (generator/generator gen-inner outer)])
-    (check-equal? (generate-while identity gen-gen)
+    (check-equal? (while/generator->list identity gen-gen)
                   '((C . 8vb) (B . 15vb) (A . 15vb) (B . 15vb) (A . 15vb) (G . 15vb) (A . 15vb) (G . 15vb) (F . 15vb))))
-  (check-equal? (generate-while identity (scale-xpose/generator C-major '(C . 0va) '(0 6 0 6)))
+  (check-equal? (while/generator->list identity (scale-xpose/generator C-major '(C . 0va) '(0 6 0 6)))
                 '((C . 0va) (B . 0va) (C . 0va) (B . 0va)))
   ;; compose: (generator/generator (generator/generator ..))
   (let* ([outer (scale-steps/generator C-major (cons 'C '8va) -3)]
@@ -360,7 +357,7 @@
          [gen-gen (generator/generator gen-inner-outer outer)]
          [gen-inner-inner (lambda (pitch) (scale-xpose/generator C-major pitch '(0 1 0 -1)))]
          [gen-gen-gen (generator/generator gen-inner-inner gen-gen)])
-    (check-equal? (generate-while identity gen-gen-gen)
+    (check-equal? (while/generator->list identity gen-gen-gen)
                   '((C . 8va) ;; (C . 8va) (C . 8va) 
                     (D . 8va)
                     (C . 8va)
@@ -399,11 +396,11 @@
                     (B . 0va))))
   (let* ([inner (scale-steps/generator C-major (cons 'C '8va) -3)]
          [outer (weighted-maybe/generator (cons 1 1) inner)])
-    (check-equal? (length (generate-while (const #t) outer)) 3))
+    (check-equal? (length (while/generator->list (const #t) outer)) 3))
   ;; map/generator works with generator that answers a list as well as a val
   (let* ([inner (sequence->generator '((1 2 3) (4 5 6)))]
          [outer (map/generator (lambda (l) (cdr l)) inner)])
-    (check-equal? (generate-while (const #t) outer) '((2 3) (5 6))))
+    (check-equal? (while/generator->list (const #t) outer) '((2 3) (5 6))))
   )
 
 ;;   (-> (list/c maybe-pitch/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest?)))
@@ -440,7 +437,7 @@
 
 (define (generate-weighted-motifs scale starting-pitch weights&maybe-interval-motifs done?)
   (let ([maybe-interval-motif-gen (weighted-list-element/generator weights&maybe-interval-motifs)])
-    (generate-while (compose not done?) (motif-gen scale starting-pitch maybe-interval-motif-gen))))
+    (while/generator->list (compose not done?) (motif-gen scale starting-pitch maybe-interval-motif-gen))))
 
 ;; FSM for parsing a motif into an maybe-interval motif to check results from generate-weighted-motifs.
 ;; Would would work as a grammar?  Took a lot of work to implement from scratch and more to debug.
