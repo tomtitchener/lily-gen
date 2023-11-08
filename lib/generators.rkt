@@ -10,14 +10,17 @@
 (provide
  
   ;; typed list with - maybe-interval/c, #f => Rest else xpose interval, listof control/c, non-empty-listof duration?
- ;; multiple durations for Rest just means multiple Rests, for Notes means list of tied Notes except last
+  ;; multiple durations for Rest just means multiple Rests, for Notes means list of tied Notes except last
   maybe-interval-motif-element/c
 
   ;; non-empty-listof maybe-interval-motif-element/c
   maybe-interval-motif/c
 
- ;; non-empty-listof (list/c relative-weight/c interval/c)
- weight&intervalss/c
+  ;; non-empty-listof (list/c relative-weight/c interval/c)
+  weight&intervalss/c
+  
+  ;; (non-empty-listof (list/c relative-weight/c maybe-interval-motif/c)
+  weight&maybe-interval-motifss/c
  
  (contract-out
   ;; proof of concept for nested generators, yield a Note or a Rest until a 
@@ -25,14 +28,13 @@
   ;; state becomes 'done, nested generators are pitch-or-f, duration, accent-or-f
   [note-or-rest/generator (-> generator? generator? generator? generator?)]
  
-  ;; inifinite generate of num-denom pair(s) from time-signature
+  ;; inifinite generator of num-denom pair(s) from time-signature
   [time-signature->num-denom/generator (-> time-signature/c generator?)]
 
-  ;; infinite generator of random pick from listof any/c based on weights,
-  ;; lengths of weights and lengths of elements must be the same
+  ;; infinite generator of random pick from listof any/c based on relative weights
   [weighted-list-element/generator (-> (non-empty-listof (list/c relative-weight/c any/c)) generator?)]
 
-  ;; generate intervals from start to stop in pitch-range-pair/c in scale given
+  ;; generate intervals from pitch/c as start to stop in pitch-range-pair/c in scale given
   ;; weights as listof relative-weight/c and intervals as listof exact-integer?
   [weighted-intervals->pitches/generator (-> Scale? pitch-range-pair/c pitch/c weight&intervalss/c generator?)]
   
@@ -72,18 +74,9 @@
   ;; incrementally accumulate left-to-right using fun from init over generator?
   [foldl/generator (-> (-> any/c any/c any/c) any/c generator? generator?)]
 
-  ;; generates a list of list of (Note or Rest) randomly by weights with last arg as done?
+  ;; generates a list of (non-empty-listof (or/ Note? Rest?)) randomly by weights until done?
   ;; done? function input is most recent (list of (Note or Rest))
-  [generate-weighted-motifs
-   (-> Scale?
-       ;; starting-pitch
-       pitch/c
-       ;; weighted-list of maybe-interval-motif, transform into list of Note or Rest 
-       (non-empty-listof (list/c relative-weight/c maybe-interval-motif/c))
-       ;; done? terminating routine that looks at most recent list of (Note or Rest) only, accumulates itself if necessary
-       (-> (non-empty-listof (or/c Note? Rest?)) boolean?)
-       ;; -> list of list of Note or Rest
-       (non-empty-listof (non-empty-listof (or/c Note? Rest?))))]
+  [weighted-motifs/generator (-> Scale? pitch/c weight&maybe-interval-motifss/c generator?)]
   ))
 
 ;; - - - - - - - - -
@@ -112,6 +105,9 @@
 
 (define maybe-interval-motif/c
   (make-flat-contract #:name 'maybe-interval-motif/c #:first-order (non-empty-listof maybe-interval-motif-element/c)))
+
+(define weight&maybe-interval-motifss/c
+  (make-flat-contract #:name 'weight&maybe-motifss/c #:first-order (non-empty-listof (list/c relative-weight/c maybe-interval-motif/c))))
 
 ;; (-> generator? generator? generator? generator?)
 (define (note-or-rest/generator pitch-or-f-gen duration-gen accent-or-f-gen)
@@ -157,8 +153,8 @@
        (sequence->repeated-generator (apply append num-denom-prs)))]))
 
 ;; (-> (non-empty-listof (list/c relative-weight/c any/c)) generator?)
-(define (weighted-list-element/generator weights&elements)
-  (match (sequence->list (unzip weights&elements))
+(define (weighted-list-element/generator weight&element-prs)
+  (match (sequence->list (unzip weight&element-prs))
     [(list weights elements)
      (let ([buckets (gen-buckets weights)])
        (infinite-generator
@@ -166,29 +162,25 @@
                [ix (list-index (lambda (bucket) (<= r bucket)) buckets)])
           (yield (list-ref elements ix)))))]))
 
-;; (-> Scale? pitch-range-pair/c pitch/c weight&intervalss/c generator?), stops on #f
+;; (-> Scale? pitch-range-pair/c pitch/c weight&intervalss/c generator?)
+;; successively xpose from start-pitch via interval, stops on #f from xpose
 (define (weighted-intervals->pitches/generator scale pitch-range-pair start-pitch weight&intervalss)
   (while/generator
    identity
    (foldl/generator
     (lambda (interval prev-pitch)
-      (transpose/unguarded scale prev-pitch pitch-range-pair interval))
+      (xpose scale pitch-range-pair prev-pitch interval))
     start-pitch
     (weighted-list-element/generator weight&intervalss))))
 
 (module+ test
   (require rackunit)
-  (define (done? cnt)
-    (let ([i 0])
-      (lambda (_)
-        (set! i (add1 i))
-        (> i cnt))))
   (let* ([scale C-major]
          [start-pitch (cons 'C '0va)]
          [pitch-range-pr (scale->pitch-range-pair scale)]
          [weight&intervalss (list (list 1 1) (list 1 -2) (list 1 -3))]
          [pitches-gen (weighted-intervals->pitches/generator C-major pitch-range-pr start-pitch weight&intervalss)])
-    (let ([pitches (while/generator->list (compose not (done? 10)) pitches-gen)])
+    (let ([pitches (while/generator->list (sum<=? (const 1) 10) pitches-gen)])
         (foldl (lambda (pitch prev-pitch)
                  (check-true (ormap (lambda (i) (equal? pitch (xpose scale pitch-range-pr prev-pitch i)))
                                     (map second weight&intervalss)))
@@ -292,7 +284,7 @@
           (void)
           (let ([acc (fun g a)])
             (yield acc)
-            (loop g acc))))))
+            (loop (gen) acc))))))
 
 (module+ test
   (require rackunit)
@@ -403,7 +395,7 @@
     (check-equal? (while/generator->list (const #t) outer) '((2 3) (5 6))))
   )
 
-;;   (-> (list/c maybe-pitch/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest?)))
+;; (-> (list/c maybe-pitch/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest?)))
 (define (maybe-pitch-motif->motif maybe-pitch-motif)
   (match maybe-pitch-motif
     [(list maybe-pitch controls durations)
@@ -411,6 +403,7 @@
        [#f
         (map Rest durations)]
        [(cons pitch octave)
+        ;; if (> (length durations) 1) expands to list of tied Pitch with controls only in first pitch
         (let ([count-durs (length durations)])
           (foldr (lambda (duration acc)
                    (let ([last  (null? acc)]
@@ -418,27 +411,23 @@
                      (cons (Note pitch octave duration (if first controls '()) (not last))  acc)))
                  '() durations))])]))
 
-;; (compose (compose sequence->list zip) ... (compose sequence->list unzip)) is noisy
-;; but incrementally applying (scanl (op-maybe +) _) to maybe-interval/c is noisier
-;; (-> Scale? pitch/c generator? generator?)
-(define (motif-gen scale starting-pitch maybe-interval-motif-gen)
+;; (-> Scale? pitch/c weight&maybe-interval-motifss/c generator?)
+;; each (generator) -> (or/c (non-empty-listof Note?) (non-empty-listof Rest?))
+(define (weighted-motifs/generator scale starting-pitch weight&maybe-interval-motif-prs)
   (define (accum-motifs maybe-pitch-motif motifs)
-    (cons (maybe-pitch-motif->motif maybe-pitch-motif) motifs))
-  (let ([max-pitch-range-pair (scale->pitch-range-pair scale)]) ;; const
+    (cons (maybe-pitch-motif->motif maybe-pitch-motif) motifs))  
+  (let ([max-pitch-range-pair (scale->pitch-range-pair scale)]
+        [maybe-interval-motif/generator (weighted-list-element/generator weight&maybe-interval-motif-prs)])
     (generator ()
        (let loop ([begin-pitch starting-pitch])
-         (match (sequence->list (unzip (maybe-interval-motif-gen)))
+         (match (sequence->list (unzip (maybe-interval-motif/generator)))
            [(list maybe-intervals controlss durationss)
             (let* ([maybe-pitches (transpose/successive scale max-pitch-range-pair begin-pitch maybe-intervals)]
                    [motifss (foldr accum-motifs '() (sequence->list (zip maybe-pitches controlss durationss)))]
                    [maybe-pitch (find identity (reverse maybe-pitches))])
               (yield (flatten motifss))
               (loop (if maybe-pitch maybe-pitch begin-pitch)))])))))
-
-(define (generate-weighted-motifs scale starting-pitch weights&maybe-interval-motifs done?)
-  (let ([maybe-interval-motif-gen (weighted-list-element/generator weights&maybe-interval-motifs)])
-    (while/generator->list (compose not done?) (motif-gen scale starting-pitch maybe-interval-motif-gen))))
-
+    
 ;; FSM for parsing a motif into an maybe-interval motif to check results from generate-weighted-motifs.
 ;; Would would work as a grammar?  Took a lot of work to implement from scratch and more to debug.
 ;; TBD: use logging instead of printf so messages can be enabled from REPL?
@@ -529,19 +518,21 @@
                  #;(printf "Rest:\n old state ~v\n new state ~v\n" sm st)
                  (loop st ms))])])])))
   ;; don't set done? count higher than 10 or risk transposing beyond range of C-major scale
-  (let* ([start-pitch (cons 'C '0va)]
-         [abs-motif-1 (list (list 1 '(Accent) '(E Q)) (list -1 '() '(W)))]
-         [abs-motif-2 (list (list 3 '(Accent) '(S)) (list -1 '() '(S)))]
-         [abs-motif-3 (list (list #f '() '(E)))]
-         [abs-motif-4 (list (list #f '() '(Q W)))]
-         [abs-motifs  (list abs-motif-1 abs-motif-2 abs-motif-3 abs-motif-4)]
-         [motifs      (generate-weighted-motifs C-major start-pitch (map (lambda (motif) (list 1 motif)) abs-motifs) (done? 10))])
+  (let* ([start-pitch  (cons 'C '0va)]
+         [abs-motif-1  (list (list 1 '(Accent) '(E Q)) (list -1 '() '(W)))]
+         [abs-motif-2  (list (list 3 '(Accent) '(S)) (list -1 '() '(S)))]
+         [abs-motif-3  (list (list #f '() '(E)))]
+         [abs-motif-4  (list (list #f '() '(Q W)))]
+         [abs-motifs   (list abs-motif-1 abs-motif-2 abs-motif-3 abs-motif-4)]
+         [w-abs-motifs (map (curry list 1) abs-motifs)]
+         [motifs/gen   (weighted-motifs/generator C-major start-pitch w-abs-motifs)]
+         [motifs       (while/generator->list (sum<=? (const 1) 10) motifs/gen)])
     #;(printf "motifs: ~v\n" motifs)
     (void (foldl (lambda (motif this-start-pitch)
              (match (motif->maybe-interval-motif C-major this-start-pitch motif)
                [(list next-start-pitch maybe-interval-motif)
                 (let ([is-member? (if (member maybe-interval-motif abs-motifs) #t #f)])
-                  #;(printf "checking for motif: ~v\n as abs-motif: ~v\n in abs-motifs: ~v\n is-member? ~v\n" motif abs-motif abs-motifs is-member?)
+                  #;(printf "checking for motif: ~v\n as abs-motif: ~v\n in abs-motifs: ~v\n is-member? ~v\n" motif maybe-interval-motif abs-motifs is-member?)
                   (check-true is-member?)
                   next-start-pitch)]))
            start-pitch motifs))))

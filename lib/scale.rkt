@@ -92,8 +92,6 @@
                           (or/c maybe-interval/c (listof maybe-interval/c))
                           (or/c maybe-pitch/c (listof maybe-pitch/c)))]
 
-  [transpose/unguarded (-> Scale? pitch/c pitch-range-pair/c maybe-interval/c maybe-pitch/c)]
-  
   ;; minimum and maximum pitches for a scale
   [scale->pitch-range-pair (-> Scale? pitch-range-pair/c)]
 

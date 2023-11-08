@@ -308,17 +308,17 @@
 
 (define piano/param (make-parameter 'AcousticGrand))
 
-(define high-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '0va))))
+(define high-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '15vb))))
 
-(define high-start-pitch (make-parameter (cons 'C '8va)))
+(define high-start-pitch/param (make-parameter (cons 'C '8va)))
 
-(define mid-pitch-range/param (make-parameter (cons (cons 'Fs '8va) (cons 'Fs '8vb))))
+(define mid-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '15vb))))
 
-(define mid-start-pitch (make-parameter (cons 'C '0va)))
+(define mid-start-pitch/param (make-parameter (cons 'Gs '0va)))
 
-(define low-pitch-range/param (make-parameter (cons (cons 'C '0va) (cons 'C '15vb))))
+(define low-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '15vb))))
 
-(define low-start-pitch (make-parameter (cons 'C '8vb)))
+(define low-start-pitch/param (make-parameter (cons 'C '0vb)))
 
 (define descending-weight&intervalss/param (make-parameter (list (list 5 -1) (list 1 -2))))
 
@@ -337,26 +337,30 @@
                               [weight&repeat-prs   weight&repeatss/c]
                               [weight&duration-prs weight&durationss/c]))
 
-(define/contract (gen-voice-events scale start-pitch weight&intervalss pitch-range-pr weights-maybe-pr weight&repeat-prs weight&duration-prs)
-  (-> Scale?
-      pitch/c
-      weight&intervalss/c
-      pitch-range-pair/c
-      (cons/c relative-weight/c relative-weight/c)
-      weight&repeatss/c
-      weight&durationss/c
-      generator?)
-  (let* ([pitch-gen         (weighted-intervals->pitches/generator scale pitch-range-pr start-pitch weight&intervalss)]
-         [pitch-or-f-gen    (weighted-maybe/generator weights-maybe-pr pitch-gen)]
-         [cnt-gen           (weighted-list-element/generator weight&repeat-prs)]
-         [pitches-or-fs-gen (combine-generators/generator repeat cnt-gen pitch-or-f-gen)]
-         [dur-gen           (weighted-list-element/generator weight&duration-prs)])
-    (combine-generators/generator dur&fs-or-pitches->rests-or-notes dur-gen pitches-or-fs-gen)))
+(define (voiceparam-values vps)
+  (values (VoiceParams-instr vps)
+          (VoiceParams-scale vps)
+          (VoiceParams-start-pitch vps)
+          (VoiceParams-pitch-range vps)
+          (VoiceParams-weight&intervalss vps)
+          (VoiceParams-weights/rests vps)
+          (VoiceParams-weight&repeat-prs vps)
+          (VoiceParams-weight&duration-prs vps)))
+
+(define/contract (voice-events->generator/VoiceParams voiceparams)
+  (-> VoiceParams? generator?)
+  (let-values ([(_ scale start-pitch pitch-range weight&intervalss weights/rests weight&repeats weight&durations) (voiceparam-values voiceparams)])
+    (let* ([pitch-gen         (weighted-intervals->pitches/generator scale pitch-range start-pitch weight&intervalss)]
+           [pitch-or-f-gen    (weighted-maybe/generator weights/rests pitch-gen)]
+           [cnt-gen           (weighted-list-element/generator weight&repeats)]
+           [pitches-or-fs-gen (combine-generators/generator repeat cnt-gen pitch-or-f-gen)]
+           [dur-gen           (weighted-list-element/generator weight&durations)])
+      (combine-generators/generator dur&fs-or-pitches->rests-or-notes dur-gen pitches-or-fs-gen))))
 
 (define voice-high/param
   (thunk (VoiceParams (piano/param)
-                      C-major
-                      (high-start-pitch)
+                      (scale/param)
+                      (high-start-pitch/param)
                       (high-pitch-range/param)
                       (descending-weight&intervalss/param)
                       (weights/rests/param)
@@ -365,8 +369,8 @@
 
 (define voice-mid/param
   (thunk (VoiceParams (piano/param)
-                      C-major
-                      (mid-start-pitch)
+                      (scale/param)
+                      (mid-start-pitch/param)
                       (mid-pitch-range/param)
                       (descending-weight&intervalss/param)
                       (weights/rests/param)
@@ -375,8 +379,8 @@
 
 (define voice-low/param
   (thunk (VoiceParams (piano/param)
-                      C-major
-                      (low-start-pitch)
+                      (scale/param)
+                      (low-start-pitch/param)
                       (low-pitch-range/param)
                       (descending-weight&intervalss/param)
                       (weights/rests/param)
@@ -385,23 +389,14 @@
 
 (define voices-params/param (thunk (list (voice-high/param) (voice-mid/param) (voice-low/param))))
 
-(define/contract (gen-voice-events/params params)
-  (-> VoiceParams? generator?)
-  (gen-voice-events (VoiceParams-scale params)
-                    (VoiceParams-start-pitch params)
-                    (VoiceParams-weight&intervalss params)
-                    (VoiceParams-pitch-range params)
-                    (VoiceParams-weights/rests params)
-                    (VoiceParams-weight&repeat-prs params)
-                    (VoiceParams-weight&duration-prs params)))
-
 (define/contract voice-param-voices/parameterized
   (-> (listof voice/c))
   (thunk
-   (let* ([notes-or-restss-gens (map gen-voice-events/params (voices-params/param))]
+   (let* ([notes-or-restss-gens (map voice-events->generator/VoiceParams (voices-params/param))]
           [notes-or-rests       (map (lambda (gen) (apply append (while/generator->list (const #t) gen))) notes-or-restss-gens)]
-          [voice-eventss        (map add-key-signature/parameterized notes-or-rests)])
-     (map (curry SplitStaffVoice (instr/param)) voice-eventss))))
+          [voice-eventss        (map add-key-signature/parameterized notes-or-rests)]
+          [instrs               (map VoiceParams-instr (voices-params/param))])
+     (map (lambda (instr ves) (SplitStaffVoice instr ves)) instrs voice-eventss))))
 
 #|
 
@@ -411,12 +406,12 @@
 ;; I take too atomized an approach, manipulating the lowest-level components, randomizing
 ;; at a level too abstract for any recognizable organization.
 
-  (parameterize
-    ((scale/param                          C-whole-tone)
-     (descending-weight&intervalss/param   (list (list 2 -1) (list 1 1) (list 2 -2)))
-     (high-pitch-range/param               (cons (cons 'E '15va) (cons 'C '15vb)))
-     (mid-pitch-range/param                (cons (cons 'C '15va) (cons 'C '15vb)))
-     (low-pitch-range/param                (cons (cons 'A '15va) (cons 'C '15vb))))
+(parameterize
+  ((scale/param                        C-whole-tone)
+   (descending-weight&intervalss/param (list (list 1 -1) (list 2 1) (list 1 -2)))
+   (high-start-pitch/param             (cons 'E '8va))
+   (mid-start-pitch/param              (cons 'C '8va))
+   (low-start-pitch/param              (cons 'As '8va)))
   (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
 |#
@@ -424,4 +419,8 @@
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;; ;;
 
-;; next target: try generate-weighted-motifs
+;; next target: weighted-motifs/generator
+;; (-> Scale? pitch/c weight&maybe-interval-motifss/c generator?)
+
+;; 
+
