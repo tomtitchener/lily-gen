@@ -8,11 +8,11 @@
 
 (require (only-in seq iterate take))
 (require (only-in algorithms repeat))
-(require (only-in srfi/1 list-index))
 
 (require lily-gen/lib/lily)
 (require lily-gen/lib/utils)
 (require lily-gen/lib/meter)
+(require lily-gen/lib/motifs)
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
 (require lily-gen/lib/scale)
@@ -35,6 +35,8 @@
   (cons (index->pitch scale 0) (index->pitch scale (scale->max-idx scale))))
 
 (define scale-range-min-max-pair/param (make-derived-parameter scale/param identity loc-scale->pitch-range-pair))
+
+(define cnt/param  (make-parameter 10))
 
 (define instr/param  (make-parameter 'AcousticGrand))
 
@@ -318,7 +320,7 @@
 
 (define low-pitch-range/param (make-parameter (cons (cons 'C '15va) (cons 'C '15vb))))
 
-(define low-start-pitch/param (make-parameter (cons 'C '0vb)))
+(define low-start-pitch/param (make-parameter (cons 'C '0va)))
 
 (define descending-weight&intervalss/param (make-parameter (list (list 5 -1) (list 1 -2))))
 
@@ -400,7 +402,7 @@
 
 #|
 
-;; Well, it all works.  But the result, when customized to span a longer stretch than this
+;; It all works.  But the result, when customized to span a longer stretch than this
 ;; example, is sort of chaotic, with voices sharing the most general of features like the
 ;; overall descending dirction, the intermittent repetition.  It's the usual problem where
 ;; I take too atomized an approach, manipulating the lowest-level components, randomizing
@@ -422,5 +424,66 @@
 ;; next target: weighted-motifs/generator
 ;; (-> Scale? pitch/c weight&maybe-interval-motifss/c generator?)
 
-;; 
+(struct/contract VoiceParams2 ([instr       instr?]
+                               [scale       Scale?]
+                               [start-pitch pitch/c]
+                               [motifs      weight&maybe-intervals-motifs/c]))
 
+(define (voiceparam2-values vps)
+  (values (VoiceParams2-instr vps)
+          (VoiceParams2-scale vps)
+          (VoiceParams2-start-pitch vps)
+          (VoiceParams2-motifs vps)))
+
+(define/contract (voice-events->generator/VoiceParams2 voice2params)
+  (-> VoiceParams2? generator?)
+  (let-values ([(_ scale start-pitch motifs) (voiceparam2-values voice2params)])
+    (weighted-motifs/generator scale start-pitch motifs)))
+
+(define weight&maybe-interval-motifs/param
+  (thunk
+   (list (list 1 (list (list 1 '(Accent) '(E.)) (list 0 '() '(S)) (list -1 '() '(E)) (list #f '() '(E))))                    ;; ends one same step
+         (list 1 (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E))))                                        ;; ends up one step
+         (list 1 (list (list -3 '() '(S)) (list 0 '() '(E)) (list 0 '() '(S)) (list 1 '(Accent) '(E)) (list 2 '() '(E))))))) ;; ends on same step
+
+(define voice2-high/param
+  (thunk (VoiceParams2 (piano/param)
+                       (scale/param)
+                       (high-start-pitch/param)
+                       (weight&maybe-interval-motifs/param))))
+
+(define voice2-mid/param
+  (thunk (VoiceParams2 (piano/param)
+                       (scale/param)
+                       (mid-start-pitch/param)
+                       (weight&maybe-interval-motifs/param))))
+
+(define voice2-low/param
+  (thunk (VoiceParams2 (piano/param)
+                       (scale/param)
+                       (low-start-pitch/param)
+                       (weight&maybe-interval-motifs/param))))
+
+(define voices2-params/param (thunk (list (voice2-high/param) (voice2-mid/param) (voice2-low/param))))
+
+(define/contract voice-param2-voices/parameterized
+  (-> (listof voice/c))
+  (thunk
+   (let* ([notes-or-restss/gens (map voice-events->generator/VoiceParams2 (voices2-params/param))]
+          [notes-or-restss      (map (lambda (gen) (apply append (while/generator->list (sum<=? (const 1) (cnt/param)) gen))) notes-or-restss/gens)]
+          [voice-eventss        (map add-key-signature/parameterized notes-or-restss)]
+          [instrs               (map VoiceParams2-instr (voices2-params/param))])
+     (map (lambda (instr ves) (SplitStaffVoice instr ves)) instrs voice-eventss))))
+
+#|
+
+(parameterize
+  ((scale/param C-whole-tone))
+   (cnt/param 20)
+  (gen-score-file (score/parameterized (voice-param2-voices/parameterized))))
+
+That's easier to listen to.  And with three voices you get random rhythmic synchronization 
+
+|#
+
+;; 
