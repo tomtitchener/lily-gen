@@ -444,15 +444,15 @@
 (define/contract (render-motif-elements scale begin-pitch motif-elements)
   (-> Scale? pitch/c maybe-intervals-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (match motif-elements
-    [(FixedPitchMotifElements starting-pitch motif-elements)
+    [(FixedPitchMotif starting-pitch motif-elements)
      (match (render-maybe-intervalss-motif-elements scale starting-pitch motif-elements)
        [(list _ motifs)
         (list begin-pitch motifs)])]
-    [(FixedOctaveMotifElements starting-octave motif-elements)
+    [(FixedOctaveMotif starting-octave motif-elements)
      (match (render-maybe-intervalss-motif-elements scale (cons (car begin-pitch) starting-octave) motif-elements)
        [(list _ motifs)
         (list begin-pitch motifs)])]
-    [(TupletMotifElements num denom dur motif-elements)
+    [(TupletMotif num denom dur motif-elements)
      (match (render-motif-elements scale begin-pitch motif-elements)
        [(list next-begin-pitch motifs)
         (list next-begin-pitch (Tuplet num denom dur motifs))])]
@@ -465,7 +465,7 @@
 ;; each (generator) -> (or/c (non-empty-listof (or/c Note? Chord? Rest?)) Tuplet?)
 ;; each (maybe-intervals-motif/generator) from weight&maybe-intervals-motifs gives
 ;; a maybe-intervals-motif/c as either a (non-empty-listof maybe-intervalss-motif-element/c),
-;; a FixedPitchMotifElements?, a FixedOctaveMotifElements? or a TupletMotifElements?
+;; a FixedPitchMotif?, a FixedOctaveMotif? or a TupletMotif?
 ;; generates (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))
 (define (weighted-motifs/generator scale starting-pitch weight&maybe-intervals-motifs)
   (let ([maybe-intervals-motif/generator (weighted-list-element/generator weight&maybe-intervals-motifs)])
@@ -478,6 +478,9 @@
             (loop next-begin-pitch (maybe-intervals-motif/generator))])))))
     
 ;; FSM for parsing a motif into an maybe-interval motif to check results from generate-weighted-motifs.
+;; NB: uses only the simplest of motif types (maybe-intervalss-motif-elements/c with single intervals),
+;; which makes the reverse construction from the list of Note or Rest possible.  It's probably not worth
+;; the effort to expand this test case to cover the other motif types FixedPitchMotif, etc.
 ;; Would would work as a grammar?  Took a lot of work to implement from scratch and more to debug.
 ;; TBD: use logging instead of printf so messages can be enabled from REPL?
 ;; Note there's a racket logger running a logger integrated with emacs Racket mode.

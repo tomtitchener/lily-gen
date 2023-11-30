@@ -5,12 +5,13 @@
 (provide
  ;; - - - - - - - - -
  ;; structs
- (struct-out FixedPitchMotifElements)
- (struct-out FixedOctaveMotifElements)
- (struct-out TupletMotifElements)
+ (struct-out FixedPitchMotif)
+ (struct-out FixedOctaveMotif)
+ (struct-out TupletMotif)
  
  ;; - - - - - - - - -
  ;; contracts
+ maybe-intervalss-motif/c
  maybe-intervalss-motif-element/c
  tuplet-motif-elements/c
  maybe-intervals-motif/c
@@ -26,17 +27,15 @@
 (define maybe-intervalss-motif-element/c
   (make-flat-contract #:name 'maybe-intervalss-motif-element/c #:first-order (list/c maybe-interval-or-intervals/c (listof control/c) (non-empty-listof duration?))))
 
-(define maybe-intervalss-motif-elements/c
-  (make-flat-contract #:name 'maybe-intervalss-motif-elements/c #:first-order (non-empty-listof maybe-intervalss-motif-element/c)))
+(define maybe-intervalss-motif/c
+  (make-flat-contract #:name 'maybe-intervalss-motif/c #:first-order (non-empty-listof maybe-intervalss-motif-element/c)))
 
-(struct/contract FixedPitchMotifElements ([starting-pitch pitch/c]
-                                          [motif-elements maybe-intervalss-motif-elements/c]))
+(struct/contract FixedPitchMotif ([starting-pitch pitch/c] [motif-elements maybe-intervalss-motif/c]))
 
-(struct/contract FixedOctaveMotifElements ([starting-octave octave?]
-                                          [motif-elements  maybe-intervalss-motif-elements/c]))
+(struct/contract FixedOctaveMotif ([starting-octave octave?] [motif-elements  maybe-intervalss-motif/c]))
 
 (define tuplet-motif-elements/c
-  (make-flat-contract #:name 'tuplet-motif-elements/c #:first-order (or/c maybe-intervalss-motif-elements/c FixedPitchMotifElements? FixedOctaveMotifElements?)))
+  (make-flat-contract #:name 'tuplet-motif-elements/c #:first-order (or/c maybe-intervalss-motif/c FixedPitchMotif? FixedOctaveMotif?)))
 
 (define/contract (tuplet-motif-element-ctor-guard num denom dur elements type-name)
   (-> natural-number/c
@@ -49,7 +48,7 @@
     (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
     (values num denom dur elements)))
 
-(struct TupletMotifElements (num denom dur elements) #:guard tuplet-motif-element-ctor-guard #:transparent)
+(struct TupletMotif (num denom dur elements) #:guard tuplet-motif-element-ctor-guard #:transparent)
 
 ;; boils down to (non-empty-listof (non-empty-listof maybe-intervalss-motif-element/c))
 ;; though the inner list can be just that or container fixed-pitch, fixed-octave, or tuplet with that in a context
@@ -61,8 +60,8 @@
 ;; where transposition behavior depends on tuplet-motif-elements/c, which is one
 ;; of previous three 
 (define maybe-intervals-motif/c
-  (make-flat-contract #:name 'maybe-intervals-motif/c #:first-order (or/c FixedPitchMotifElements?
-                                                                          FixedOctaveMotifElements?
-                                                                          TupletMotifElements?
-                                                                          maybe-intervalss-motif-elements/c)))
+  (make-flat-contract #:name 'maybe-intervals-motif/c #:first-order (or/c FixedPitchMotif?
+                                                                          FixedOctaveMotif?
+                                                                          TupletMotif?
+                                                                          maybe-intervalss-motif/c)))
 

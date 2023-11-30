@@ -440,6 +440,15 @@
   (let-values ([(_ scale start-pitch motifs) (voiceparam2-values voice2params)])
     (weighted-motifs/generator scale start-pitch motifs)))
 
+;; this contains motifs of only the maybe-intervalss-motif-elements/c type, 
+;; and even then, only of a single interval (Note) vs. multiple (Chord).
+;;
+;; start by adding a couple chords to this example.
+;;
+;; continue by trying out the FixedPitchMotifElements and FixedOctaveMotifElements
+;;
+;; finish with the TupletMotifElements
+;;
 (define weight&maybe-interval-motifs/param
   (thunk
    (list (list 1 (list (list 1 '(Accent) '(E.)) (list 0 '() '(S)) (list -1 '() '(E)) (list #f '() '(E))))                    ;; ends one same step
