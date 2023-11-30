@@ -399,13 +399,13 @@
   )
 
 (define/contract (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif)
-  (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest?)))
+  (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest? Chord?)))
   (match maybe-pitch-or-pitches-motif
     [(list maybe-pitch-or-pitches controls durations)
      (match maybe-pitch-or-pitches
        [#f
         (map Rest durations)]
-       [(cons pitch octave)
+       [(cons (? pitch-class? pitch) (? octave? octave))
         ;; if (> (length durations) 1) expands to list of tied Notes with controls only in first pitch
         (let ([count-durs (length durations)])
           (foldr (lambda (duration acc)
@@ -413,7 +413,7 @@
                          [first (= (sub1 count-durs) (length acc))])
                      (cons (Note pitch octave duration (if first controls '()) (not last))  acc)))
                  '() durations))]
-       [pitches
+       [pitches ;; TBD: couldn't match this with a binding (list (cons (? pitch-class?) (? octave?)) ...)
         ;; if (> (length durations) 1) expands to list of tied Chords with controls only in first pitch
         (let ([count-durs (length durations)])
           (foldr (lambda (duration acc)
@@ -422,15 +422,39 @@
                      (cons (Chord pitches duration (if first controls '()) (not last))  acc)))
                  '() durations))])]))
 
+#;(define/contract (maybe-pitch-or-pitches-motif->motif-cond maybe-pitch-or-pitches-motif)
+  (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest? Chord?)))
+  (match maybe-pitch-or-pitches-motif
+    [(list maybe-pitch-or-pitches controls durations)
+     (cond
+       [(not maybe-pitch-or-pitches)
+        (map Rest durations)]
+       [(pitch/c maybe-pitch-or-pitches)
+        (let ([pitch-class (car maybe-pitch-or-pitches)]
+              [octave      (cdr maybe-pitch-or-pitches)]
+              [count-durs  (length durations)])
+          (foldr (lambda (duration acc)
+                   (let ([last  (null? acc)]
+                         [first (= (sub1 count-durs) (length acc))])
+                     (cons (Note pitch-class octave duration (if first controls '()) (not last))  acc)))
+                 '() durations))]
+       [else
+        (let ([count-durs (length durations)])
+          (foldr (lambda (duration acc)
+                   (let ([last  (null? acc)]
+                         [first (= (sub1 count-durs) (length acc))])
+                     (cons (Chord maybe-pitch-or-pitches duration (if first controls '()) (not last))  acc)))
+                 '() durations))])]))
+
 (define/contract (render-maybe-intervalss-motif-elements scale starting-pitch maybe-intervalss-motif-elements)
   (-> Scale? pitch/c (non-empty-listof maybe-intervalss-motif-element/c) (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (define (accum-motifs maybe-pitch-or-pitches-motif motifs)
     (cons (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif) motifs))
   (define (maybe-pitch-or-pitches->maybe-pitch maybe-pitch-or-pitches)
-    (match maybe-pitch-or-pitches
-      [#f #f]
-      [(cons pitch-class octave) (cons pitch-class octave)]
-      [pitches (car pitches)]))
+    (cond
+      [(not maybe-pitch-or-pitches)     #f]
+      [(pitch/c maybe-pitch-or-pitches) maybe-pitch-or-pitches]
+      [else                             (car maybe-pitch-or-pitches)]))
   (let ([begin-pitch starting-pitch]
         [max-pitch-range-pair (scale->pitch-range-pair scale)])
     (match (sequence->list (unzip maybe-intervalss-motif-elements))

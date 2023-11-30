@@ -81,34 +81,20 @@
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
-;; * the duration of the tuplet is the dur value from the Tuplet struct
+;; * the duration for the entire tuplet is the sum of the durations of the notes
+;;   divided by the number of notes per tuplet times the duration of one tuplet
 ;;   (see voice-event->duration-int)
-;; * there must be no remainder from (/ dur denom) or perhaps a better measure
-;;   is that when you do (/ (duration->int dur) denom) then there should be an
-;;   integral duration from (int->durations (/ (duration->int denom)))
-;; * the duration of the events between the brackets is (* num (/ dur denom))
-;; (-> natural-number/c natural-number/c duration? natural-number/c symbol? void)
 (define (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
   (cond
     [(= num denom)
-     (error type-name "with num ~v = denom ~v" num denom)]
+     (error type-name "num ~v = denom ~v" num denom)]
+    [(not (integer? (/ tot-dur num)))
+     (error type-name "tot-dur: ~v / num: ~v is not an integer: ~v" tot-dur num (/ tot-dur num))]
+    [(not (integer? (/ (* (/ tot-dur num) denom) (duration->int dur))))
+     (error type-name "((tot-dur: ~v / num: ~v) * denom: ~v) / dur: ~v is not an integer"
+            tot-dur num denom (duration->int dur) (/ (* (/ tot-dur num) denom) (duration->int dur)))]
     [else
-     (let ([unit-dur  (/ (duration->int dur) denom)])
-       (cond
-         [(not (integer? unit-dur))
-          (error type-name
-                 "with non-integral unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v"
-                 dur (duration->int dur) denom unit-dur)]
-         [(not (= 1 (length (int->durations unit-dur))))
-          (error type-name
-                 "unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v is not an integral duration ~v"
-                 dur (duration->int dur) denom unit-dur (int->durations unit-dur))]
-         [(not (= tot-dur (* num unit-dur)))
-          (error type-name
-                 "total duration ~v instead of (* num: ~v unit-dur: ~v): ~v"
-                 tot-dur num unit-dur (* num unit-dur))]
-         [else
-          (void)]))]))
+     (void)]))
 
 (define/contract (tuplet-ctor-guard num denom dur notes type-name)
   (-> natural-number/c
@@ -121,6 +107,11 @@
     (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
     (values num denom dur notes)))
 
+;; dur is duration of a tuplet, of which there may be an integral count in notes
+;; e.g. for (durs only) Tuplet 3 2 8 '(16 16 16 16 16 16)
+;; - the 3 says a tuplet is a group of 3 so here there are two integral groups
+;; - the 2 says the group of 3 takes place in the time of 2
+;; - the 8 says the duration of a tuplet is an eighth note, for total of 2 eighths or a quarter
 (struct Tuplet (num denom dur notes) #:guard tuplet-ctor-guard #:transparent)
 
 (struct/contract TempoDur ([dur   duration?]
@@ -206,13 +197,13 @@
 ;; (-> voice-event/c natural-number/c)
 (define (voice-event->duration-int voice-event)
   (match voice-event
-    [(Note _ _ dur _ _) (duration->int dur)]
-    [(Rest dur)         (duration->int dur)]
-    [(Spacer dur)       (duration->int dur)]
-    [(Chord _ dur _ _)  (duration->int dur)]
-    [(Tuplet _ _ dur _) (duration->int dur)]
-    [(KeySignature _ _) 0]
-    [(? clef?)          0]))
+    [(Note _ _ dur _ _)  (duration->int dur)]
+    [(Rest dur)          (duration->int dur)]
+    [(Spacer dur)        (duration->int dur)]
+    [(Chord _ dur _ _)   (duration->int dur)]
+    [(Tuplet n d _ ns)   (* (/ (apply + (map voice-event->duration-int ns)) n) d)]
+    [(KeySignature _ _)  0]
+    [(? clef?)           0]))
 
 (struct/contract PitchedVoice ([instr       instr?]
                                [voiceevents (listof voice-event/c)])

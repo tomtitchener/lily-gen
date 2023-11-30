@@ -454,7 +454,8 @@
 ;; list item => take first element from LHS and sum with item on RHS
 ;; item list => sum itm from LHS against all elementson RHS
 ;; item item => sum two items as ordinary +
-(define (list-sum lhs rhs)
+;; NB: something about scanl gets the args so rhs is first, lhs is second
+(define (list-sum rhs lhs)
   (cond [(and (list? lhs) (list? rhs))
          (let ([l (first lhs)])
            (map (curry + l) rhs))]

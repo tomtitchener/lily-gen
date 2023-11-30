@@ -20,7 +20,7 @@
 
   [ctrls-durs&pit->notes (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Note?))]
   
-  [ctrls-durs&pits->chords (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Chord?))]
+  [ctrls-durs&pits->chords (-> (listof control/c) (non-empty-listof duration?) (non-empty-listof pitch/c) (listof Chord?))]
 
   [ctrls-durs&mpit->notes-or-rests (-> (listof control/c) (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))]
 
