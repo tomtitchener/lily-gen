@@ -39,7 +39,9 @@
 
   [duration->int  (-> symbol? natural-number/c)]
   
-  [int->durations (-> natural-number/c (listof duration?))])
+  [int->durations (-> natural-number/c (listof duration?))]
+
+  [tuplet-ctor-guard-durs (-> natural-number/c natural-number/c duration? natural-number/c symbol? void)])
  
  ;; - - - - - - - - -
  ;; symbols and predicates
@@ -57,6 +59,7 @@
 (define num-denom/c
   (make-flat-contract #:name 'num-denom/c #:first-order (cons/c natural-number/c duration?)))
 
+;; TBD: if first item was pitch/c then Note would better parallel Chord
 (struct/contract Note ([pitch    pitch-class?]
                        [octave   octave?]
                        [dur      duration?]
@@ -84,32 +87,39 @@
 ;;   is that when you do (/ (duration->int dur) denom) then there should be an
 ;;   integral duration from (int->durations (/ (duration->int denom)))
 ;; * the duration of the events between the brackets is (* num (/ dur denom))
+;; (-> natural-number/c natural-number/c duration? natural-number/c symbol? void)
+(define (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
+  (cond
+    [(= num denom)
+     (error type-name "with num ~v = denom ~v" num denom)]
+    [else
+     (let ([unit-dur  (/ (duration->int dur) denom)])
+       (cond
+         [(not (integer? unit-dur))
+          (error type-name
+                 "with non-integral unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v"
+                 dur (duration->int dur) denom unit-dur)]
+         [(not (= 1 (length (int->durations unit-dur))))
+          (error type-name
+                 "unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v is not an integral duration ~v"
+                 dur (duration->int dur) denom unit-dur (int->durations unit-dur))]
+         [(not (= tot-dur (* num unit-dur)))
+          (error type-name
+                 "total duration ~v instead of (* num: ~v unit-dur: ~v): ~v"
+                 tot-dur num unit-dur (* num unit-dur))]
+         [else
+          (void)]))]))
+
 (define/contract (tuplet-ctor-guard num denom dur notes type-name)
   (-> natural-number/c
       natural-number/c
       duration?
-      (listof tuplet-note/c) symbol? (values natural-number/c natural-number/c duration? (listof tuplet-note/c)))
-  (cond
-    [(= num denom)
-     (error type-name "Tuplet with num ~v = denom ~v" num denom)]
-    [else
-     (let ([unit-dur  (/ (duration->int dur) denom)]
-           [notes-dur (apply + (map voice-event->duration-int notes))])
-       (cond
-         [(not (integer? unit-dur))
-          (error type-name
-                 "Tuplet with non-integral unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v"
-                 dur (duration->int dur) denom unit-dur)]
-         [(not (= 1 (length (int->durations unit-dur))))
-          (error type-name
-                 "Tuplet unit duration (/ (duration->int dur: ~v): ~v denom: ~v): ~v is not an integral duration ~v"
-                 dur (duration->int dur) denom unit-dur (int->durations unit-dur))]
-         [(not (= notes-dur (* num unit-dur)))
-          (error type-name
-                 "Tuplet notes: ~v with total duration: ~v instead of (* num: ~v unit-dur: ~v): ~v"
-                 notes notes-dur (* num unit-dur) num unit-dur)]
-         [else
-          (values num denom dur notes)]))]))
+      (non-empty-listof tuplet-note/c)
+      symbol?
+      (values natural-number/c natural-number/c duration? (non-empty-listof tuplet-note/c)))
+  (let ([tot-dur (apply + (map voice-event->duration-int notes))])
+    (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
+    (values num denom dur notes)))
 
 (struct Tuplet (num denom dur notes) #:guard tuplet-ctor-guard #:transparent)
 
