@@ -5,6 +5,7 @@
 (provide
  pitch/c
  maybe-pitch/c
+ maybe-pitch-or-pitches/c 
  ;; all are either (listof symbol?) or (-> symbol? boolean?)
  pitch-class-syms
  pitch-class?
@@ -81,6 +82,9 @@
 
 (define maybe-pitch/c
   (make-flat-contract #:name 'maybe-pitch/c #:first-order (or/c pitch/c false/c)))
+
+(define maybe-pitch-or-pitches/c
+  (make-flat-contract #:name 'maybe-pitch-or-pitches/c #:first-order (or/c pitch/c (non-empty-listof pitch/c) false/c)))
 
 (define duration-syms
  '(W.  W
