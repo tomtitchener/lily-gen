@@ -447,7 +447,7 @@
                  '() durations))])]))
 
 (define/contract (render-maybe-intervalss-motif-elements scale starting-pitch maybe-intervalss-motif-elements)
-  (-> Scale? pitch/c (non-empty-listof maybe-intervalss-motif-element/c) (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
+  (-> Scale? pitch/c maybe-intervalss-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (define (accum-motifs maybe-pitch-or-pitches-motif motifs)
     (cons (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif) motifs))
   (define (maybe-pitch-or-pitches->maybe-pitch maybe-pitch-or-pitches)
@@ -466,7 +466,7 @@
          (list maybe-pitch (flatten motifss)))])))
 
 (define/contract (render-motif-elements scale begin-pitch motif-elements)
-  (-> Scale? pitch/c maybe-intervals-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
+  (-> Scale? pitch/c maybe-intervals-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))))
   (match motif-elements
     [(FixedPitchMotif starting-pitch motif-elements)
      (match (render-maybe-intervalss-motif-elements scale starting-pitch motif-elements)
@@ -479,7 +479,7 @@
     [(TupletMotif num denom dur motif-elements)
      (match (render-motif-elements scale begin-pitch motif-elements)
        [(list next-begin-pitch motifs)
-        (list next-begin-pitch (Tuplet num denom dur motifs))])]
+        (list next-begin-pitch (list (Tuplet num denom dur motifs)))])]
     [maybe-intervalss-motif-elements
      (match (render-maybe-intervalss-motif-elements scale begin-pitch maybe-intervalss-motif-elements)
        [(list maybe-pitch motifs)

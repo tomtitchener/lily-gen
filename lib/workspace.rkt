@@ -454,9 +454,9 @@
    (list (list 1 (list (list (list 1 2) '(Accent) '(E.)) (list (list 0 4) '() '(S)) (list -1 '() '(E)) (list #f '() '(E))))  ;; ends one same step
          (list 1 (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E))))                                        ;; ends up one step
          (list 1 (list (list -3 '() '(S)) (list 0 '() '(E)) (list 0 '() '(S)) (list 1 '(Accent) '(E)) (list 2 '() '(E))))    ;; ends on same step
-         #;(list 1 (FixedPitchMotif (cons 'As '8vb) (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
-         #;(list 1 (FixedOctaveMotif '15vb (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
-         
+         (list 1 (FixedPitchMotif (cons 'As '8vb) (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
+         (list 1 (FixedOctaveMotif '15vb (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
+         (list 1 (TupletMotif 3 2 'E (list (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)) (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)))))
          ))) 
 
 (define voice2-high/param
