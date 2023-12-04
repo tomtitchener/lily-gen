@@ -495,7 +495,8 @@
    (cnt/param 20)
   (gen-score-file (score/parameterized (voice-param2-voices/parameterized))))
 
-That's easier to listen to.  And with three voices you get random rhythmic synchronization 
+That's easier to listen to.  And with three voices you get random rhythmic synchronization.
+Though, with the Tuplet you sometimes get an error trying to manage the total duration 
 
 |#
 

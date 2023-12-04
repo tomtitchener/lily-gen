@@ -349,7 +349,7 @@
          ;; tuplets
          (let ([tuplet-durlen (duration->int dur)]
                [rem-durlen (cdr (bar-position-for-time-signature time-signature curlen))])
-           (if (> tuplet-durlen rem-durlen)
+           (if (and (> rem-durlen 0) (> tuplet-durlen rem-durlen))
                (error 'align-voice-events-durations
                       "tuplet ~v durlen ~v > durlen to end of bar ~v"
                       voice-event tuplet-durlen rem-durlen)
