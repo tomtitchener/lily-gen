@@ -427,7 +427,7 @@
 (struct/contract VoiceParams2 ([instr       instr?]
                                [scale       Scale?]
                                [start-pitch pitch/c]
-                               [motifs      weight&maybe-intervals-motifs/c]))
+                               [motifs      weight&maybe-intervalss-motifs/c]))
 
 (define (voiceparam2-values vps)
   (values (VoiceParams2-instr vps)
@@ -438,7 +438,7 @@
 (define/contract (voice-events->generator/VoiceParams2 voice2params)
   (-> VoiceParams2? generator?)
   (let-values ([(_ scale start-pitch motifs) (voiceparam2-values voice2params)])
-    (weighted-motifs/generator scale start-pitch motifs)))
+    (weighted-maybe-intervalss-motifs/generator scale start-pitch motifs)))
 
 ;; this contains motifs of only the maybe-intervalss-motif-elements/c type, 
 ;; and even then, only of a single interval (Note) vs. multiple (Chord).
@@ -454,9 +454,9 @@
    (list (list 1 (list (list (list 1 2) '(Accent) '(E.)) (list (list 0 4) '() '(S)) (list -1 '() '(E)) (list #f '() '(E))))  ;; ends one same step
          (list 1 (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E))))                                        ;; ends up one step
          (list 1 (list (list -3 '() '(S)) (list 0 '() '(E)) (list 0 '() '(S)) (list 1 '(Accent) '(E)) (list 2 '() '(E))))    ;; ends on same step
-         (list 1 (FixedPitchMotif (cons 'As '8vb) (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
-         (list 1 (FixedOctaveMotif '15vb (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
-         (list 1 (TupletMotif 3 2 'E (list (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)) (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)))))
+         (list 1 (FixedPitchMaybeIntervalsMotif (cons 'As '8vb) (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
+         (list 1 (FixedOctaveMaybeIntervalsMotif '15vb (list (list -1 '() '(S)) (list 1 '() '(S)) (list 1 '(Accent) '(E)))))
+         (list 1 (TupletMaybeIntervalsMotif 3 2 'E (list (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)) (list -1 '() '(S)) (list -1 '() '(S)) (list 1 '() '(S)))))
          ))) 
 
 (define voice2-high/param

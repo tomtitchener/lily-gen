@@ -20,7 +20,7 @@
   weight&intervalss/c
   
   ;; (non-empty-listof (list/c relative-weight/c maybe-intervals-motif/c)
-  weight&maybe-intervals-motifs/c
+  weight&maybe-intervalss-motifs/c
 
   ;; (non-empty-listof (list/c relative-weight/c (list/c exact-positive-integer? exact-positive-integer?)))
   #;weight&count-lengthss/c
@@ -79,7 +79,7 @@
 
   ;; generates a list of (non-empty-listof (or/ Note? Rest?)) randomly by weights until done?
   ;; done? function input is most recent (list of (Note or Rest))
-  [weighted-motifs/generator (-> Scale? pitch/c weight&maybe-intervals-motifs/c generator?)]
+  [weighted-maybe-intervalss-motifs/generator (-> Scale? pitch/c weight&maybe-intervalss-motifs/c generator?)]
   ))
 
 ;; - - - - - - - - -
@@ -106,9 +106,9 @@
   (make-flat-contract #:name 'weight&intervalss/c #:first-order
                       (non-empty-listof (list/c relative-weight/c interval/c))))
 
-(define weight&maybe-intervals-motifs/c
-  (make-flat-contract #:name 'weight&maybe-intervals-motifs/c #:first-order
-                      (non-empty-listof (list/c relative-weight/c maybe-intervals-motif/c))))
+(define weight&maybe-intervalss-motifs/c
+  (make-flat-contract #:name 'weight&maybe-intervalss-motifs/c #:first-order
+                      (non-empty-listof (list/c relative-weight/c maybe-intervalss-motifs/c))))
 
 ;; (-> generator? generator? generator? generator?)
 (define (note-or-rest/generator pitch-or-f-gen duration-gen accent-or-f-gen)
@@ -405,16 +405,14 @@
      (match maybe-pitch-or-pitches
        [#f
         (map Rest durations)]
-       [(cons (? pitch-class? pitch) (? octave? octave))
-        ;; if (> (length durations) 1) expands to list of tied Notes with controls only in first pitch
+       [(cons (? pitch-class? pitch-class) (? octave? octave))
         (let ([count-durs (length durations)])
           (foldr (lambda (duration acc)
                    (let ([last  (null? acc)]
                          [first (= (sub1 count-durs) (length acc))])
-                     (cons (Note pitch octave duration (if first controls '()) (not last))  acc)))
+                     (cons (Note pitch-class octave duration (if first controls '()) (not last))  acc)))
                  '() durations))]
-       [pitches ;; TBD: couldn't match this with a binding (list (cons (? pitch-class?) (? octave?)) ...)
-        ;; if (> (length durations) 1) expands to list of tied Chords with controls only in first pitch
+       [pitches ;; TBD: this is a match (list (cons (? pitch-class?) (? octave?)) ...) but I want a binding
         (let ([count-durs (length durations)])
           (foldr (lambda (duration acc)
                    (let ([last  (null? acc)]
@@ -422,31 +420,7 @@
                      (cons (Chord pitches duration (if first controls '()) (not last))  acc)))
                  '() durations))])]))
 
-#;(define/contract (maybe-pitch-or-pitches-motif->motif-cond maybe-pitch-or-pitches-motif)
-  (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest? Chord?)))
-  (match maybe-pitch-or-pitches-motif
-    [(list maybe-pitch-or-pitches controls durations)
-     (cond
-       [(not maybe-pitch-or-pitches)
-        (map Rest durations)]
-       [(pitch/c maybe-pitch-or-pitches)
-        (let ([pitch-class (car maybe-pitch-or-pitches)]
-              [octave      (cdr maybe-pitch-or-pitches)]
-              [count-durs  (length durations)])
-          (foldr (lambda (duration acc)
-                   (let ([last  (null? acc)]
-                         [first (= (sub1 count-durs) (length acc))])
-                     (cons (Note pitch-class octave duration (if first controls '()) (not last))  acc)))
-                 '() durations))]
-       [else
-        (let ([count-durs (length durations)])
-          (foldr (lambda (duration acc)
-                   (let ([last  (null? acc)]
-                         [first (= (sub1 count-durs) (length acc))])
-                     (cons (Chord maybe-pitch-or-pitches duration (if first controls '()) (not last))  acc)))
-                 '() durations))])]))
-
-(define/contract (render-maybe-intervalss-motif-elements scale starting-pitch maybe-intervalss-motif-elements)
+(define/contract (render-maybe-intervalss-motif scale starting-pitch maybe-intervalss-motif-elements)
   (-> Scale? pitch/c maybe-intervalss-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (define (accum-motifs maybe-pitch-or-pitches-motif motifs)
     (cons (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif) motifs))
@@ -465,46 +439,46 @@
               [maybe-pitch             (maybe-pitch-or-pitches->maybe-pitch maybe-pitch-or-pitches)])
          (list maybe-pitch (flatten motifss)))])))
 
-(define/contract (render-motif-elements scale begin-pitch motif-elements)
-  (-> Scale? pitch/c maybe-intervals-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))))
-  (match motif-elements
-    [(FixedPitchMotif starting-pitch motif-elements)
-     (match (render-maybe-intervalss-motif-elements scale starting-pitch motif-elements)
+(define/contract (render-maybe-intervalss-motifs scale begin-pitch motif)
+  (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))))
+  (match motif
+    [(FixedPitchMaybeIntervalsMotif starting-pitch motif)
+     (match (render-maybe-intervalss-motif scale starting-pitch motif)
        [(list _ motifs)
         (list begin-pitch motifs)])]
-    [(FixedOctaveMotif starting-octave motif-elements)
-     (match (render-maybe-intervalss-motif-elements scale (cons (car begin-pitch) starting-octave) motif-elements)
+    [(FixedOctaveMaybeIntervalsMotif starting-octave motif)
+     (match (render-maybe-intervalss-motif scale (cons (car begin-pitch) starting-octave) motif)
        [(list _ motifs)
         (list begin-pitch motifs)])]
-    [(TupletMotif num denom dur motif-elements)
-     (match (render-motif-elements scale begin-pitch motif-elements)
+    [(TupletMaybeIntervalsMotif num denom dur motif)
+     (match (render-maybe-intervalss-motif scale begin-pitch motif)
        [(list next-begin-pitch motifs)
         (list next-begin-pitch (list (Tuplet num denom dur motifs)))])]
-    [maybe-intervalss-motif-elements
-     (match (render-maybe-intervalss-motif-elements scale begin-pitch maybe-intervalss-motif-elements)
+    [maybe-intervalss-motif
+     (match (render-maybe-intervalss-motif scale begin-pitch maybe-intervalss-motif)
        [(list maybe-pitch motifs)
         (list (or maybe-pitch begin-pitch) motifs)])]))
 
-;; (-> Scale? pitch/c weight&maybe-intervals-motifs/c generator?)
+;; (-> Scale? pitch/c weight&maybe-intervalss-motifs/c generator?)
 ;; each (generator) -> (or/c (non-empty-listof (or/c Note? Chord? Rest?)) Tuplet?)
-;; each (maybe-intervals-motif/generator) from weight&maybe-intervals-motifs gives
+;; each (maybe-intervals-motif/generator) from weight&maybe-intervalss-motifs gives
 ;; a maybe-intervals-motif/c as either a (non-empty-listof maybe-intervalss-motif-element/c),
-;; a FixedPitchMotif?, a FixedOctaveMotif? or a TupletMotif?
+;; a FixedPitchMaybeIntervalsMotif?, a FixedOctaveMaybeIntervalsMotif? or a TupletMaybeIntervalsMotif?
 ;; generates (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))
-(define (weighted-motifs/generator scale starting-pitch weight&maybe-intervals-motifs)
-  (let ([maybe-intervals-motif/generator (weighted-list-element/generator weight&maybe-intervals-motifs)])
+(define (weighted-maybe-intervalss-motifs/generator scale starting-pitch weight&maybe-intervalss-motifs)
+  (let ([maybe-intervals-motif/generator (weighted-list-element/generator weight&maybe-intervalss-motifs)])
     (generator ()
-       (let loop ([begin-pitch starting-pitch]
-                  [maybe-intervals-motif (maybe-intervals-motif/generator)])
-         (match (render-motif-elements scale begin-pitch maybe-intervals-motif)
+       (let loop ([begin-pitch             starting-pitch]
+                  [maybe-intervalss-motifs (maybe-intervals-motif/generator)])
+         (match (render-maybe-intervalss-motifs scale begin-pitch maybe-intervalss-motifs)
            [(list next-begin-pitch motifs)
             (yield motifs)
             (loop next-begin-pitch (maybe-intervals-motif/generator))])))))
     
-;; FSM for parsing a motif into an maybe-interval motif to check results from generate-weighted-motifs.
+;; FSM for parsing a motif into an maybe-interval motif to check results from generate-maybe-intervals-weighted-motifs.
 ;; NB: uses only the simplest of motif types (maybe-intervalss-motif-elements/c with single intervals),
 ;; which makes the reverse construction from the list of Note or Rest possible.  It's probably not worth
-;; the effort to expand this test case to cover the other motif types FixedPitchMotif, etc.
+;; the effort to expand this test case to cover the other motif types FixedPitchMaybeIntervalsMotif, etc.
 ;; Would would work as a grammar?  Took a lot of work to implement from scratch and more to debug.
 ;; TBD: use logging instead of printf so messages can be enabled from REPL?
 ;; Note there's a racket logger running a logger integrated with emacs Racket mode.
@@ -512,7 +486,7 @@
   (require rackunit)
   (require (only-in lily-gen/lib/utils sum<=?))
   (define/contract (motif->maybe-interval-motif scale starting-pitch motif)
-    (-> Scale? pitch/c (non-empty-listof (or/c Note? Rest?)) (list/c pitch/c maybe-intervals-motif/c))
+    (-> Scale? pitch/c (non-empty-listof (or/c Note? Rest?)) (list/c pitch/c maybe-intervalss-motif/c))
     (struct ST (current-state maybe-interval-motif previous-pitch current-pitch controls durations) #:transparent)
     (define (pitches->interval first-pitch this-pitch)
       (- (pitch->index scale this-pitch) (pitch->index scale first-pitch)))
@@ -601,7 +575,7 @@
          [abs-motif-4  (list (list #f '() '(Q W)))]
          [abs-motifs   (list abs-motif-1 abs-motif-2 abs-motif-3 abs-motif-4)]
          [w-abs-motifs (map (curry list 1) abs-motifs)]
-         [motifs/gen   (weighted-motifs/generator C-major start-pitch w-abs-motifs)]
+         [motifs/gen   (weighted-maybe-intervalss-motifs/generator C-major start-pitch w-abs-motifs)]
          [motifs       (while/generator->list (sum<=? (const 1) 10) motifs/gen)])
     #;(printf "motifs: ~v\n" motifs)
     (void (foldl (lambda (motif this-start-pitch)
