@@ -2,14 +2,10 @@
 
 ;; iterate-workspace.rkt
 
-(require lily-gen/lib/workspace)
-
+(require lily-gen/ws/workspace)
 (require lily-gen/lib/scale)
-
 (require lily-gen/lib/score)
-
 (require lily-gen/lib/score-utils)
-
 (require (only-in seq iterate))
 
 ;; first target: try out transpose/iterate with default values as parameters

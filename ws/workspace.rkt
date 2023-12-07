@@ -73,17 +73,3 @@
     (close-output-port output-port)
     (system (format "lilypond -s -o test ~v" output-file-name))))
 
-
-
-;; Next:
-;; * redo this file to be an import with workspace utilities.
-;; * create a file that requires workspace.rkt with piece-specific customization.
-;; * start with sparse texture with delicate motifs spread over wide range,
-;;   means lots of fixed-pitch sequences otherwise successive transposition fails
-;;   - lots of tuplets
-;;   - combine random sequences of fixed-pitch dancing tuplets with sequential
-;;     transposing chord/pitch strings, maybe with starting intervals themselves
-;;     drawn from weighted random distribution
-;;   - start on offbeats, first beat, but keep integral unit of duration e.g.
-;;     quarter note for each
-;;   

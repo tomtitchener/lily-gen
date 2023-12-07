@@ -1,17 +1,11 @@
 #lang racket
 
 (require (only-in algorithms repeat))
-
 (require racket/generator)
-
-(require lily-gen/lib/workspace)
-
+(require lily-gen/ws/workspace)
 (require lily-gen/lib/scale)
-
 (require lily-gen/lib/score)
-
 (require lily-gen/lib/utils)
-
 (require lily-gen/lib/generators)
 
 ;; descending-intervals-workspace.rkt
