@@ -81,20 +81,20 @@
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
-;; * the duration for the entire tuplet is the sum of the durations of the notes
-;;   divided by the number of notes per tuplet times the duration of one tuplet
-;;   (see voice-event->duration-int)
-(define (tuplet-ctor-guard-durs num denom dur tot-dur type-name)
-  (cond
-    [(= num denom)
-     (error type-name "num ~v = denom ~v" num denom)]
-    [(not (integer? (/ tot-dur num)))
-     (error type-name "tot-dur: ~v / num: ~v is not an integer: ~v" tot-dur num (/ tot-dur num))]
-    [(not (integer? (/ (* (/ tot-dur num) denom) (duration->int dur))))
-     (error type-name "((tot-dur: ~v / num: ~v) * denom: ~v) / dur: ~v is not an integer"
-            tot-dur num denom (duration->int dur) (/ (* (/ tot-dur num) denom) (duration->int dur)))]
-    [else
-     (void)]))
+;; the duration for the entire tuplet is the sum of the durations of the notes
+;; times the numerator divided by the divisor (see voice-event->duration-int)
+(define (tuplet-ctor-guard-durs num denom tup-dur tup-notes-dur type-name)
+  (let ([tot-dur (* (/ tup-notes-dur num) denom)]
+        [tup-dur-int (duration->int tup-dur)])
+    (cond
+      [(= num denom)
+       (error type-name "num ~v = denom ~v" num denom)]
+      [(not (integer? tot-dur))
+       (error type-name "tot-dur: ~v (* (/ notes dur: ~v num: ~v) denom: ~v) is not an integer" tot-dur tup-notes-dur num denom)]
+      [(not (integer? (/ tot-dur tup-dur-int)))
+       (error type-name "tot-dur: ~v / tuplet-dur: ~v is not an integer: ~v" tot-dur tup-dur-int (/ tot-dur tup-dur))]
+      [else
+       (void)])))
 
 (define/contract (tuplet-ctor-guard num denom dur notes type-name)
   (-> natural-number/c
@@ -112,6 +112,7 @@
 ;; - the 3 says a tuplet is a group of 3 so here there are two integral groups
 ;; - the 2 says the group of 3 takes place in the time of 2
 ;; - the 8 says the duration of a tuplet is an eighth note, for total of 2 eighths or a quarter
+;; - the total duration adjusted for num and denom is (* (/ (* 16 6) 3) 2) = 64 or (* 16 4)
 (struct Tuplet (num denom dur notes) #:guard tuplet-ctor-guard #:transparent)
 
 (struct/contract TempoDur ([dur   duration?]
