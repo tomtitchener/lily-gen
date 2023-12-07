@@ -278,6 +278,13 @@
             (yield (fun val))
             (loop (gen)))))))
 
+;; like an incremental scanl, each yield shows a step,
+;; if gen gives '(1 2 3) and fun is + then same as scanl
+;; maybe with optional fun at the end to compute carry
+;; from current acc and result of current (gen) instead of
+;; always carrying acc itself, with identity function as
+;; default or existing behavior if no function is provided,
+;; note that carry is hidden if distinct from acc
 ;; (-> (-> any/c any/c any/c) any/c generator? generator?)
 (define (foldl/generator fun init gen)
   (generator ()
@@ -420,6 +427,9 @@
                      (cons (Chord pitches duration (if first controls '()) (not last))  acc)))
                  '() durations))])]))
 
+;; given a previous starting-pitch and a list of maybe-intervalss-motif/c,
+;; transpose maybe-intervalss into list of Rest? Note? or Chord? and answer
+;; the list with the final maybe-pitch from the list for the next motif 
 (define/contract (render-maybe-intervalss-motif scale starting-pitch maybe-intervalss-motif-elements)
   (-> Scale? pitch/c maybe-intervalss-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (define (accum-motifs maybe-pitch-or-pitches-motif motifs)
@@ -428,7 +438,7 @@
     (cond
       [(not maybe-pitch-or-pitches)     #f]
       [(pitch/c maybe-pitch-or-pitches) maybe-pitch-or-pitches]
-      [else                             (car maybe-pitch-or-pitches)]))
+      [else                             (car maybe-pitch-or-pitches)])) ;; lowest note of the chord to carry
   (let ([begin-pitch starting-pitch]
         [max-pitch-range-pair (scale->pitch-range-pair scale)])
     (match (sequence->list (unzip maybe-intervalss-motif-elements))
@@ -451,9 +461,9 @@
        [(list _ motifs)
         (list begin-pitch motifs)])]
     [(TupletMaybeIntervalsMotif num denom dur motif)
-     (match (render-maybe-intervalss-motif scale begin-pitch motif)
-       [(list next-begin-pitch motifs)
-        (list next-begin-pitch (list (Tuplet num denom dur motifs)))])]
+     (match (render-maybe-intervalss-motifs scale begin-pitch motif)
+       [(list maybe-pitch motifs)
+        (list (or maybe-pitch begin-pitch) (list (Tuplet num denom dur motifs)))])]
     [maybe-intervalss-motif
      (match (render-maybe-intervalss-motif scale begin-pitch maybe-intervalss-motif)
        [(list maybe-pitch motifs)
@@ -465,6 +475,17 @@
 ;; a maybe-intervals-motif/c as either a (non-empty-listof maybe-intervalss-motif-element/c),
 ;; a FixedPitchMaybeIntervalsMotif?, a FixedOctaveMaybeIntervalsMotif? or a TupletMaybeIntervalsMotif?
 ;; generates (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))
+;;
+;; TBD:  bury weight&maybe-intervalss-motifs into a generator? that emits (listof maybe-intervalss-motifs/c)
+;; maybe with a programmable interface to determine the count of motifs answered (vary as its own weighted
+;; list), then all this does is thread the begin-pitch, maybe the same as foldl/generator, and all the motif
+;; subroutines above move to motifs.rkt .. except foldl/generator doesn't quite work because it accumulates
+;; the entirety of the what was yielded whereas all I want is the previous start-pitch, though that could be
+;; pretty easily implemented as an abstract generator analogous to foldl/generator where the underlaying
+;; generator returns (list carry-value yield-value), or I could mess with foldl/generator by passing in an
+;; optional function that computed the carry value from the current yield-value and the previous carry value
+;; with a default of 
+;; (-> Scale? pitch/c generator? generator?)
 (define (weighted-maybe-intervalss-motifs/generator scale starting-pitch weight&maybe-intervalss-motifs)
   (let ([maybe-intervals-motif/generator (weighted-list-element/generator weight&maybe-intervalss-motifs)])
     (generator ()
