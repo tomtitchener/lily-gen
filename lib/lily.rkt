@@ -205,12 +205,12 @@
     \set PianoStaff.instrumentName = #"@(instr->short-lily instr)"\set PianoStaff.midiInstrument = #"@(instr->lily instr)"
     \new Staff = "up" {
     \new Voice {                       
-    \clef treble \autoChange { @(tempo->lily tempo) @(time-signature->lily time-signature) @(string-join (map voice-event->lily events))))) } \bar "|."
+    \clef treble \autoChange c { @(tempo->lily tempo) @(time-signature->lily time-signature) @(string-join (map voice-event->lily events))))) } \bar "|."
     }
     }
     \new Staff = "down" {
     \new Voice {                       
-    \clef bass \autoChange { @(time-signature->lily time-signature) } | \bar "|."
+    \clef bass \autoChange c { @(time-signature->lily time-signature) } | \bar "|."
     }
     }
     >>
