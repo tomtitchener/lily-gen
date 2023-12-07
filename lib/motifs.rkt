@@ -60,6 +60,9 @@
 
 (struct TupletMaybeIntervalsMotif (num denom dur element) #:guard tuplet-motif-element-ctor-guard #:transparent)
 
+;; TBD: tricky names that vary by plural.
+;; This is a sum, which should be singular, with abstract label?
+;; Rename maybe-intervalss-motif/c with transposing-maybe-intervalss-motif/c?
 (define maybe-intervalss-motifs/c
   (make-flat-contract #:name 'maybe-intervalss-motifs/c #:first-order (or/c FixedPitchMaybeIntervalsMotif?
                                                                             FixedOctaveMaybeIntervalsMotif?
