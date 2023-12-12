@@ -16,6 +16,7 @@
  (struct-out Spacer)
  (struct-out Tuplet)
  (struct-out Chord)
+ (struct-out Sempre)
  (struct-out TempoDur)
  (struct-out TempoLong)
  (struct-out TempoRange)
@@ -58,6 +59,8 @@
 
 (define num-denom/c
   (make-flat-contract #:name 'num-denom/c #:first-order (cons/c natural-number/c duration?)))
+
+(struct/contract Sempre ([controls (listof control/c)]))
 
 ;; TBD: if first item was pitch/c then Note would better parallel Chord
 (struct/contract Note ([pitch    pitch-class?]
@@ -158,7 +161,7 @@
   (make-flat-contract #:name 'time-signature/c #:first-order (or/c TimeSignatureSimple? TimeSignatureGrouping? TimeSignatureCompound?)))
 
 (define voice-event/c
-  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
+  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Sempre? Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
 
 ;; TBD: move to score
 
@@ -204,6 +207,7 @@
     [(Chord _ dur _ _)   (duration->int dur)]
     [(Tuplet n d _ ns)   (* (/ (apply + (map voice-event->duration-int ns)) n) d)]
     [(KeySignature _ _)  0]
+    [(Sempre _)          0]
     [(? clef?)           0]))
 
 (struct/contract PitchedVoice ([instr       instr?]

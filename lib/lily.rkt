@@ -36,6 +36,7 @@
   (string-append
    (pitch->lily (cons (Note-pitch note) (Note-octave note)))
    (duration->lily (Note-dur note))
+   (maybe-format-sempre-data (Note-tie note))
    (apply string-append (map control->lily (Note-controls note)))
    (if (Note-tie note) "~" "")))
 
@@ -70,9 +71,10 @@
         [controls (Chord-controls chord)]
         [tie?     (Chord-tie      chord)])
     (format
-     "< ~a >~a~a~a"
+     "< ~a >~a~a~a~a"
      (string-join (map pitch->lily pitches) " ")
      (duration->lily dur)
+     (maybe-format-sempre-data tie?)
      (apply string-append (map control->lily controls))
      (if tie? "~" ""))))
 
@@ -117,6 +119,47 @@
         [mode  (KeySignature-mode  keysig)])
     (format "\\key ~a \\~a" (pitch-class->lily pitch) (mode->lily mode))))
 
+(define sempre-data (make-hash '((ctrls . ())(mkup . #f)(ptie . #f))))
+
+;; \markup \italic "sempre pppp e staccatissimo"
+(define/contract (maybe-format-sempre-markup)
+  (-> string?)
+  (cond [(or (null? (hash-ref sempre-data 'ctrls)) (hash-ref sempre-data 'mkup))
+         ""]
+        [else
+         (hash-set! sempre-data 'mkup #t)
+         (let* ([controls (hash-ref sempre-data 'ctrls)]
+                [markups  (map (compose string-downcase symbol->string) controls)])
+           (format "-\\markup \\italic \"sempre ~a\"" (string-join markups " e ")))]))
+
+;; \tag #'midi \pppp .. \tag #'midi -! ..
+(define/contract (maybe-format-sempre-controls tie?)
+  (-> boolean? string?)
+  (let* ([controls (hash-ref sempre-data 'ctrls)]
+         [markups  (map control->lily controls)])
+    (if (null? markups)
+        ""
+        (let* ([ptie? (hash-ref sempre-data 'ptie)]
+               [last-note? (and ptie? (not tie?))])
+          (when last-note?
+            (hash-set! sempre-data 'ptie #f))
+          (when tie?
+            (hash-set! sempre-data 'ptie #t))
+          (if (or ptie? last-note?)
+              ""
+              (apply string-append (map (curry format "\\tag #'midi ~a") markups)))))))
+
+(define/contract (maybe-format-sempre-data tie?)
+  (-> boolean? string?)
+  (string-append (maybe-format-sempre-markup) (maybe-format-sempre-controls tie?)))
+
+(define/contract (init-sempre-data sempre)
+  (-> Sempre? string?)
+  (hash-set! sempre-data 'ctrls (Sempre-controls sempre))
+  (hash-set! sempre-data 'mkup #f)
+  (hash-set! sempre-data 'ptie #f)
+  "")
+
 (define/contract (time-signature-simple->lily time-signature)
   (-> TimeSignatureSimple? string?)
   (let ([num   (TimeSignatureSimple-num   time-signature)]
@@ -150,13 +193,14 @@
 
 (define/contract (voice-event->lily voiceevent)
   (-> voice-event/c string?)
-  (cond [(Note?            voiceevent) (note->lily          voiceevent)]
-        [(Rest?            voiceevent) (rest->lily          voiceevent)]
-        [(Spacer?          voiceevent) (spacer->lily        voiceevent)]
-        [(Tuplet?          voiceevent) (tuplet->lily        voiceevent)]
-        [(Chord?           voiceevent) (chord->lily         voiceevent)]
-        [(clef?            voiceevent) (clef->lily          voiceevent)]
-        [(KeySignature?    voiceevent) (keysignature->lily  voiceevent)]
+  (cond [(Note?         voiceevent) (note->lily          voiceevent)]
+        [(Rest?         voiceevent) (rest->lily          voiceevent)]
+        [(Spacer?       voiceevent) (spacer->lily        voiceevent)]
+        [(Tuplet?       voiceevent) (tuplet->lily        voiceevent)]
+        [(Chord?        voiceevent) (chord->lily         voiceevent)]
+        [(clef?         voiceevent) (clef->lily          voiceevent)]
+        [(KeySignature? voiceevent) (keysignature->lily  voiceevent)]
+        [(Sempre?       voiceevent) (init-sempre-data    voiceevent)]
         [else (error "voice-event->lily unexpected voiceevent")]))
 
 (define/contract (pitched-voice->lily tempo time-signature voice)

@@ -194,9 +194,7 @@
               [all-notes (append notes rests)])
          (flatten (map replace-voice-event-durlen all-notes (duration->int durs))))]
       ;; should have consumed all zero-duration voice-events already
-      [(KeySignature _ _)
-       (error 'replace-voice-event-durlen "unexpected voice-event ~v" voice-event)]
-      [(? clef?)
+      [(or (KeySignature _ _) (Sempre _) (? clef?))
        (error 'replace-voice-event-durlen "unexpected voice-event ~v" voice-event)])))
 
 (define/contract (clip-voice-events total-durlen voice-events)
@@ -354,7 +352,7 @@
                       "tuplet ~v durlen ~v > durlen to end of bar ~v"
                       voice-event tuplet-durlen rem-durlen)
                (cons (+ curlen tuplet-durlen) (list voice-event))))]
-        [(or (Spacer _) (KeySignature _ _) (? clef?))
+        [(or (Spacer _) (KeySignature _ _) (Sempre _) (? clef?))
          ;; Spacer: treat integrally with durs unchanged
          ;; KeySignature, clef: zero-dur from voice-event->duration-int
          (let ([addlen (voice-event->duration-int voice-event)])
