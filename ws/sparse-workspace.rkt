@@ -149,37 +149,41 @@
    (list (list 1 (TupletMaybeIntervalsMotif 3 2 'Q
                    (FixedPitchMaybeIntervalsMotif
                     (cons 'C '0va)
-                    (list (list (list 0) '(PPPP Staccatissimo) '(E))
-                          (list (list 2) '(Staccatissimo)       '(E))
-                          (list #f       '(Staccatissimo)       '(E))
-                          (list #f       '(Staccatissimo)       '(E))
-                          (list (list 2) '(Staccatissimo)       '(E))
-                          (list (list 2) '(Staccatissimo)       '(E))
-                          (list (list 2) '(Accent Staccatissimo) '(E))
-                          (list (list 2) '(Staccatissimo)       '(E))
-                          (list (list 2) '(Staccatissimo)       '(E))))))
+                    (list (list (list 0) '() '(E))
+                          (list (list 2) '()       '(E))
+                          (list #f       '()       '(E))
+                          (list #f       '()       '(E))
+                          (list (list 2) '()       '(E))
+                          (list (list 2) '()       '(E))
+                          (list (list 2) '(Accent) '(E))
+                          (list (list 2) '()       '(E))
+                          (list (list 2) '()       '(E))))))
          (list 1 (list (list #f '() '(Q))))
          (list 1 (TupletMaybeIntervalsMotif 5 4 'Q
                    (FixedPitchMaybeIntervalsMotif
                     (cons 'C '15va)
                     (list (list #f           '() '(S))
-                          (list (list 0)     '(PPPP Staccatissimo) '(S S))
-                          (list (list -2 -4) '(Staccatissimo) '(S))
-                          (list (list -2 -4) '(Staccatissimo) '(S))
+                          (list (list 0)     '() '(S S))
+                          (list (list -2 -4) '() '(S))
+                          (list (list -2 -4) '() '(S))
                           ;; 32nds next?
-                          (list (list -2 -4) '(Staccatissimo) '(T))
-                          (list (list -2 -4) '(Staccatissimo) '(T))
-                          (list (list -2 -4) '(Staccatissimo) '(S))
-                          (list (list -2 -4) '(Staccatissimo) '(T))
-                          (list (list -2 -4) '(Staccatissimo) '(T))
-                          (list (list -2 -4) '(Staccatissimo) '(S))
-                          (list #f           '(Staccatissimo) '(S))))))
+                          (list (list -2 -4) '() '(T))
+                          (list (list -2 -4) '() '(T))
+                          (list (list -2 -4) '() '(S))
+                          (list (list -2 -4) '() '(T))
+                          (list (list -2 -4) '() '(T))
+                          (list (list -2 -4) '() '(S))
+                          (list #f           '() '(S))))))
          (list 1 (list (list #f '() '(Q))))
          )))
 
 ;; next: motif-generators, regular repetition of fixed-pitch motifs gets
 ;; tiresome quickly, need larger repertory of motifs that can be programed
 ;; to grow (maybe by accretion?) or change
+;; also, uniform articulation and quiet dynamics get repetitive to type in,
+;; note I had a "sempre staccato" behavior in Haskell where I put the
+;; repeated annotations with #midi tags so they didn't show up in the notated
+;; version
 
 (struct/contract VoiceParams ([instr       instr?]
                               [scale       Scale?]
@@ -207,6 +211,12 @@
 
 (define voices-params/param (make-parameter (list (voice/param))))
 
+(define sempre/param (make-parameter (Sempre (list 'PPPPP 'Staccatissimo))))
+
+(define/contract (add-sempre/parameterized voice-events)
+  (-> (listof voice-event/c) (listof voice-event/c))
+  (cons (sempre/param) voice-events))
+
 (define/contract voice-param-voices/parameterized
   (-> (listof voice/c))
   (thunk
@@ -215,13 +225,23 @@
                                        (apply append (while/generator->list (sum<=? (const 1) (count/param)) gen)))
                                      notes-or-restss/gens)]
           [voice-eventss        (map add-key-signature/parameterized notes-or-restss)]
+          [voice-eventss        (map add-sempre/parameterized notes-or-restss)]
           [instrs               (map VoiceParams-instr (voices-params/param))])
      (map (lambda (instr ves) (SplitStaffVoice instr ves)) instrs voice-eventss))))
 
 ;; Whole-tone is much more interesting to listen to than C-major
+
 #;(parameterize
-  ((count/param 20)
-   (start-pitch/param (cons 'As '8va))
-   (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (tuplets-motifs/param)))))
-  (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
+    ((file-name/param "doubles")
+     (count/param 20)
+     (start-pitch/param (cons 'As '15va))
+     (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (doubles-motifs/param)))))
+    (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
+
+#;(parameterize
+    ((file-name/param "tuplets")
+     (count/param 10)
+     (start-pitch/param (cons 'As '8va))
+     (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (tuplets-motifs/param)))))
+    (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
