@@ -19,7 +19,6 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y lilypond
-          raco pkg install --auto --skip-installed seq algorithms binary-class
       - name: Run Tests
         run: |
           export LILYPOND_VERSION=2.22
