@@ -19,5 +19,4 @@ jobs:
         run: |
           export LILYPOND_VERSION=2.22
           mkdir ./lib/test
-          raco pkg install --auto
           raco test .
