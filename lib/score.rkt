@@ -17,6 +17,7 @@
  (struct-out Tuplet)
  (struct-out Chord)
  (struct-out Sempre)
+ (struct-out Ordinale)
  (struct-out TempoDur)
  (struct-out TempoLong)
  (struct-out TempoRange)
@@ -38,7 +39,7 @@
   ;; extract duration from voice-event, 0 if none
   [voice-event->duration-int (-> voice-event/c natural-number/c)]
 
-  [duration->int  (-> symbol? natural-number/c)]
+  [duration->int  (-> symbol? exact-positive-integer?)]
   
   [int->durations (-> natural-number/c (listof duration?))]
 
@@ -61,6 +62,10 @@
   (make-flat-contract #:name 'num-denom/c #:first-order (cons/c natural-number/c duration?)))
 
 (struct/contract Sempre ([controls (listof control/c)]))
+
+(struct Ordinale ())
+ 
+;; TBD: independent voices on the same staff, much more complicated to render as Lilypond.
 
 ;; TBD: if first item was pitch/c then Note would better parallel Chord
 (struct/contract Note ([pitch    pitch-class?]
@@ -161,9 +166,7 @@
   (make-flat-contract #:name 'time-signature/c #:first-order (or/c TimeSignatureSimple? TimeSignatureGrouping? TimeSignatureCompound?)))
 
 (define voice-event/c
-  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Sempre? Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
-
-;; TBD: move to score
+  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Sempre? Ordinale? Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
 
 ;; in 128ths 
 (define duration-vals
@@ -184,7 +187,6 @@
 
 (define int-duration-hash (make-hash (map cons duration-vals duration-syms)))
 
-;; totval is any non-zero positive integer,
 ;; answer the list of durations large -> small to exhaust totval
 ;; (-> natural-number/c (listof duration?))
 (define (int->durations totval)
@@ -208,6 +210,7 @@
     [(Tuplet n d _ ns)   (* (/ (apply + (map voice-event->duration-int ns)) n) d)]
     [(KeySignature _ _)  0]
     [(Sempre _)          0]
+    [(Ordinale)          0]
     [(? clef?)           0]))
 
 (struct/contract PitchedVoice ([instr       instr?]

@@ -20,7 +20,7 @@
 (struct/contract VoiceParams ([instr       instr?]
                               [scale       Scale?]
                               [start-pitch pitch/c]
-                              [motifs      weight&maybe-intervalss-motifs/c]))
+                              [motifs      weight&maybe-intervalss-motifss/c]))
 
 (define (voiceparam-values vps)
   (values (VoiceParams-instr vps)
@@ -86,8 +86,8 @@
 #|
 
 (parameterize
-  ((scale/param C-whole-tone))
-   (cnt/param 20)
+  ((scale/param C-whole-tone)
+   (cnt/param 20))
   (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
 That's easier to listen to.  And with three voices you get random rhythmic synchronization.

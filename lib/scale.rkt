@@ -147,6 +147,7 @@
 (define maybe-intervals/c
   (make-flat-contract #:name 'maybe-intervals/c #:first-order (or/c (non-empty-listof interval/c) false/c)))
 
+;; interval/c => Note, (non-empty-listof interval/c) => Chord, false/c => Rest
 (define maybe-interval-or-intervals/c
   (make-flat-contract #:name 'maybe-interval-or-intervals/c #:first-order (or/c interval/c (non-empty-listof interval/c) false/c)))
 
@@ -288,13 +289,12 @@
   (Scale (rotate-list-by (Scale-pitch-classes (major-scale root-pc 'relative-minor-scale)) 5)))
 
 ;; macros to create diatonic major and harmonic minor scales named e.g. C-major C-minor ...
-;; tbd: first macro attempt, could probably be simpler
 (require (for-syntax racket/syntax))
 
 (define-syntax (make-major-scale stx)
   (syntax-case stx ()
     [(_ a)
-     (with-syntax ([name (format-id #'a "~a-major" #'a)])
+     (with-syntax ([name (format-id #'a "~a-major" (syntax-e #'a))])
        #'(define name (major-scale 'a)))]
     [(_ a b ...)
      #'(begin
@@ -304,7 +304,7 @@
 (define-syntax (make-minor-scale stx)
   (syntax-case stx ()
     [(_ a)
-     (with-syntax ([name (format-id #'a "~a-minor" #'a)])
+     (with-syntax ([name (format-id #'a "~a-minor" (syntax-e #'a))])
        #'(define name (minor-scale 'a)))]
     [(_ a b ...)
      #'(begin

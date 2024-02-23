@@ -114,6 +114,30 @@
                        (list (list  0 -3) '() '(E)))) ;; 2Q down 3 steps
          )))
 
+;; make rhythms a little more off-beat, with fewer rests, a little less regularity
+(define doubles-motifs-2/param
+  (thunk
+   (list (list 2 (list (list #f '()               '(Q S))
+                       (list (list 0) '()         '(S))
+                       (list (list 2) '(Accent)   '(S))
+                       (list (list 0) '()         '(S))
+                       (list (list 3 5) '(Accent) '(S))
+                       (list (list 0 5) '()       '(S)))) ;; (upbeat) 3 Q, up 5 steps
+         (list 2 (list (list (list 1) '()         '(E))
+                       (list (list -1) '(Accent)  '(S))
+                       (list #f '()               '(S))
+                       (list (list -1) '(Accent)  '(T))
+                       (list (list -1) '()        '(T))
+                       (list (list -1) '()        '(S)))) ;; 2Q, down 3 steps
+         (list 1 (list (list #f '() '(E))))
+         (list 1 (list (list (list -1 -3) '() '(S))
+                       (list (list  0 -3) '() '(S))
+                       (list (list -1 -3) '() '(E)))) ;; 1Q down 2 steps
+         (list 1 (list (list (list  0 -3) '() '(S))
+                       (list (list -1 -3) '() '(S))
+                       (list (list  0 -3) '() '(E)))) ;; 1Q down 1 steps
+         )))
+
 ;; Watch out, extra tricky with descending chords
 ;; inside a motif because transpose/successive
 ;; doesn't sort e.g. low-high. 
@@ -149,7 +173,7 @@
    (list (list 1 (TupletMaybeIntervalsMotif 3 2 'Q
                    (FixedPitchMaybeIntervalsMotif
                     (cons 'C '0va)
-                    (list (list (list 0) '() '(E))
+                    (list (list (list 0) '()       '(E))
                           (list (list 2) '()       '(E))
                           (list #f       '()       '(E))
                           (list #f       '()       '(E))
@@ -163,7 +187,7 @@
                    (FixedPitchMaybeIntervalsMotif
                     (cons 'C '15va)
                     (list (list #f           '() '(S))
-                          (list (list 0)     '() '(S S))
+                          (list (list 0)     '() '(E))
                           (list (list -2 -4) '() '(S))
                           (list (list -2 -4) '() '(S))
                           ;; 32nds next?
@@ -174,21 +198,16 @@
                           (list (list -2 -4) '() '(T))
                           (list (list -2 -4) '() '(S))
                           (list #f           '() '(S))))))
-         (list 1 (list (list #f '() '(Q))))
          )))
 
 ;; next: motif-generators, regular repetition of fixed-pitch motifs gets
 ;; tiresome quickly, need larger repertory of motifs that can be programed
 ;; to grow (maybe by accretion?) or change
-;; also, uniform articulation and quiet dynamics get repetitive to type in,
-;; note I had a "sempre staccato" behavior in Haskell where I put the
-;; repeated annotations with #midi tags so they didn't show up in the notated
-;; version
 
 (struct/contract VoiceParams ([instr       instr?]
                               [scale       Scale?]
                               [start-pitch pitch/c]
-                              [motifs      weight&maybe-intervalss-motifs/c]))
+                              [motifs      weight&maybe-intervalss-motifss/c]))
 
 (define (voiceparam-values vps)
   (values (VoiceParams-instr vps)
@@ -231,17 +250,28 @@
 
 ;; Whole-tone is much more interesting to listen to than C-major
 
-#;(parameterize
+#;(parameterize*
     ((file-name/param "doubles")
      (count/param 20)
      (start-pitch/param (cons 'As '15va))
      (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (doubles-motifs/param)))))
     (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
-#;(parameterize
+#;(parameterize*
     ((file-name/param "tuplets")
-     (count/param 10)
+     (count/param 20)
      (start-pitch/param (cons 'As '8va))
-     (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (tuplets-motifs/param)))))
+     (scale/param C-whole-tone)
+     (voices-params/param (list (VoiceParams (piano/param) (scale/param) (start-pitch/param) (tuplets-motifs/param)))))
     (gen-score-file (score/parameterized (voice-param-voices/parameterized))))
 
+;; issue with doubles is exceeding min or max range for piano
+;; possible to try to adjust weights for components, but still exceeds range often
+;; watch out, if parmam in first arg of parametize effect downstream param, 
+;; e.g. start-pitch/param below, use parameterize* vs. parameterize
+#;(parameterize*
+    ((file-name/param "doubles")
+     (count/param 40) ;; higher count
+     (start-pitch/param (cons 'As '15va))
+     (voices-params/param (list (VoiceParams (piano/param) C-whole-tone (start-pitch/param) (doubles-motifs-2/param)))))
+    (gen-score-file (score/parameterized (voice-param-voices/parameterized))))

@@ -160,6 +160,13 @@
   (hash-set! sempre-data 'ptie #f)
   "")
 
+(define/contract (reset-sempre-data)
+  (-> string?)
+  (hash-set! sempre-data 'ctrls '())
+  (hash-set! sempre-data 'mkup #f)
+  (hash-set! sempre-data 'ptie #f)
+  "-\\markup \\italic \"ord.\"")
+
 (define/contract (time-signature-simple->lily time-signature)
   (-> TimeSignatureSimple? string?)
   (let ([num   (TimeSignatureSimple-num   time-signature)]
@@ -201,6 +208,7 @@
         [(clef?         voiceevent) (clef->lily          voiceevent)]
         [(KeySignature? voiceevent) (keysignature->lily  voiceevent)]
         [(Sempre?       voiceevent) (init-sempre-data    voiceevent)]
+        [(Ordinale?     voiceevent) (reset-sempre-data)]
         [else (error "voice-event->lily unexpected voiceevent")]))
 
 (define/contract (pitched-voice->lily tempo time-signature voice)

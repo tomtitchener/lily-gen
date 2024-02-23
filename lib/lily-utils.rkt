@@ -121,8 +121,8 @@
 
 ;; copied from midi instrument list for lilypond conversion to midi
 (define instrs
-  '("acoustic grand"            "contrabass"         "lead 7 (fifths)"
-    "bright acoustic"           "tremolo strings"    "lead 8 (bass+lead)"
+  '("acoustic grand"            "contrabass"        "lead 7 (fifths)"
+    "bright acoustic"           "tremolo strings"   "lead 8 (bass+lead)"
     "electric grand"           "pizzicato strings"  "pad 1 (new age)"
     "honky-tonk"               "orchestral harp"    "pad 2 (warm)"
     "electric piano 1"         "timpani"            "pad 3 (polysynth)"
