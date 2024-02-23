@@ -15,8 +15,13 @@ jobs:
           architecture: 'x64'
           distribution: 'full'
           version: '8.7'
+      - name: Install Package and its Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y lilypond
       - name: Run Tests
         run: |
           export LILYPOND_VERSION=2.22
           mkdir ./lib/test
+          raco pkg install --auto --no-docs
           raco test .
