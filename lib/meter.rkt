@@ -143,13 +143,13 @@
   (-> voice/c (listof natural-number/c) voice/c)
   (define (durlen->rests added-durlen) (map Rest (int->durations added-durlen)))
   (match voice
-    [(PitchedVoice instr voice-events)
-     (PitchedVoice instr (append voice-events (durlen->rests (car added-durlens))))]
-    [(KeyboardVoice instr voice-events-pr)
-     (KeyboardVoice instr (cons (append (car voice-events-pr) (durlen->rests (car added-durlens)))
+    [(PitchedVoice instr pan voice-events)
+     (PitchedVoice instr pan (append voice-events (durlen->rests (car added-durlens))))]
+    [(KeyboardVoice instr pan voice-events-pr)
+     (KeyboardVoice instr pan (cons (append (car voice-events-pr) (durlen->rests (car added-durlens)))
                                 (append (cdr voice-events-pr) (durlen->rests (cadr added-durlens)))))]
-    [(SplitStaffVoice instr voice-events)
-     (SplitStaffVoice instr (append voice-events (durlen->rests (car added-durlens))))]))
+    [(SplitStaffVoice instr pan voice-events)
+     (SplitStaffVoice instr pan (append voice-events (durlen->rests (car added-durlens))))]))
 
 ;; add rests to the end of voice-events to carry all voices to the end of the last measure
 ;; (-> time-signature/c (listof voice/c) (listof voice/c))
@@ -217,13 +217,13 @@
 (define/contract (clip-voice-events-at-total-durlen total-durlen voice)
   (-> natural-number/c voice/c voice/c)
   (match voice
-    [(PitchedVoice instr voice-events)
-     (PitchedVoice instr (clip-voice-events total-durlen voice-events))]
-    [(KeyboardVoice instr voice-events-pr)
-     (KeyboardVoice instr (cons (clip-voice-events total-durlen (car voice-events-pr))
+    [(PitchedVoice instr pan voice-events)
+     (PitchedVoice instr pan (clip-voice-events total-durlen voice-events))]
+    [(KeyboardVoice instr pan voice-events-pr)
+     (KeyboardVoice instr pan (cons (clip-voice-events total-durlen (car voice-events-pr))
                                 (clip-voice-events total-durlen (cdr voice-events-pr))))]
-    [(SplitStaffVoice instr voice-events)
-     (SplitStaffVoice instr (clip-voice-events total-durlen voice-events))]))
+    [(SplitStaffVoice instr pan voice-events)
+     (SplitStaffVoice instr pan (clip-voice-events total-durlen voice-events))]))
   
 ;; (-> time-signature/c (listof voice/c) (listof voice/c))
 (define (clip-voices-durations time-sig voices)
@@ -412,13 +412,13 @@
 ;; (-> time-signature/c voice/c voice/c)
 (define (align-voice-durations time-signature voice)
   (match voice
-    [(PitchedVoice instr voice-events)
-     (PitchedVoice instr (align-voice-events-durations time-signature voice-events))]
-    [(KeyboardVoice instr voice-events-pr)
-     (KeyboardVoice instr (cons (align-voice-events-durations time-signature (car voice-events-pr))
-                                (align-voice-events-durations time-signature (cdr voice-events-pr))))]
-    [(SplitStaffVoice instr voice-events)
-     (SplitStaffVoice instr (align-voice-events-durations time-signature voice-events))]))
+    [(PitchedVoice instr pan voice-events)
+     (PitchedVoice instr pan (align-voice-events-durations time-signature voice-events))]
+    [(KeyboardVoice instr pan voice-events-pr)
+     (KeyboardVoice instr pan (cons (align-voice-events-durations time-signature (car voice-events-pr))
+                                    (align-voice-events-durations time-signature (cdr voice-events-pr))))]
+    [(SplitStaffVoice instr pan voice-events)
+     (SplitStaffVoice instr pan (align-voice-events-durations time-signature voice-events))]))
 
 ;; (-> VoicesGroup? VoicesGroup?)
 (define (extend&align-voices-group-durations voices-group)  

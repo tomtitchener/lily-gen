@@ -36,12 +36,12 @@
 ;; (-> voice/c (listof natural-number/c))
 (define (voice->total-durs voice)
   (match voice
-    [(PitchedVoice _ voice-events)
+    [(PitchedVoice _ _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]
-    [(KeyboardVoice _ voice-events-pr)
+    [(KeyboardVoice _ _ voice-events-pr)
      (list (apply + (map voice-event->duration-int (car voice-events-pr)))
            (apply + (map voice-event->duration-int (cdr voice-events-pr))))]
-    [(SplitStaffVoice _ voice-events)
+    [(SplitStaffVoice _ _ voice-events)
      (list (apply + (map voice-event->duration-int voice-events)))]))
 
 ;; (-> time-signature/c natural-number/c)

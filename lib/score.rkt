@@ -213,19 +213,22 @@
     [(Ordinale)          0]
     [(? clef?)           0]))
 
-(struct/contract PitchedVoice ([instr       instr?]
-                               [voiceevents (listof voice-event/c)])
+(struct/contract PitchedVoice ([instr        instr?]
+                               [pan-position real?]
+                               [voiceevents  (listof voice-event/c)])
                  #:transparent)
 
 (define voice-events-pair/c
   (make-flat-contract #:name 'voice-events-pair/c #:first-order (cons/c (listof voice-event/c) (listof voice-event/c))))
 
 (struct/contract KeyboardVoice ([instr           instr?]
+                                [pan-position    real?]
                                 [voiceeventspair voice-events-pair/c])
                  #:transparent)
 
-(struct/contract SplitStaffVoice ([instr       instr?]
-                                  [voiceevents (listof voice-event/c)])
+(struct/contract SplitStaffVoice ([instr        instr?]
+                                  [pan-position real?]
+                                  [voiceevents  (listof voice-event/c)])
                  #:transparent)
 
 (define voice/c

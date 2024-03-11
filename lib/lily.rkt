@@ -213,31 +213,38 @@
 
 (define/contract (pitched-voice->lily tempo time-signature voice)
   (-> tempo/c time-signature/c PitchedVoice? string?)
-  (let ([instr  (PitchedVoice-instr       voice)]
-        [events (PitchedVoice-voiceevents voice)])
+  (let ([instr  (PitchedVoice-instr        voice)]
+        [pan    (PitchedVoice-pan-position voice)]
+        [events (PitchedVoice-voiceevents  voice)])
     @string-append{
     \new Voice
-    {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)"
-    @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily events)))) \bar "|."
+    {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)" \set Staff.midiPanPosition = @(pan->lily pan)
+          @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily events)))) \bar "|."
     }
     }))
+
+(define (pan->lily pan)
+  (format "~v" pan))
   
 (define/contract (keyboard-voice->lily tempo time-signature voice )
   (-> tempo/c time-signature/c KeyboardVoice? string?)
   (let* ([instr      (KeyboardVoice-instr           voice)]
+         [pan        (KeyboardVoice-pan-position    voice)]
          [eventspair (KeyboardVoice-voiceeventspair voice)]
          [treble     (car eventspair)]
          [bass       (cdr eventspair)])
     @string-append{
     \new PianoStaff {
     <<
-    \set PianoStaff.instrumentName = #"@(instr->short-lily instr)"\set PianoStaff.midiInstrument = #"@(instr->lily instr)"
+    \set PianoStaff.instrumentName = #"@(instr->short-lily instr)" \set PianoStaff.midiInstrument = #"@(instr->lily instr)"
     \new Staff = "rh" {
+    \set Staff.midiPanPosition = @(pan->lily pan)
     \new Voice {                       
     @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily treble)))) \bar "|."
     }
     }
     \new Staff = "lh" {
+    \set Staff.midiPanPosition = @(pan->lily pan)
     \new Voice {                       
     @(string-join (cons (time-signature->lily time-signature) (map voice-event->lily bass))) \bar "|."
     }
@@ -249,18 +256,21 @@
 
 (define/contract (splitstaff-voice->lily tempo time-signature voice)
   (-> tempo/c time-signature/c SplitStaffVoice? string?)
-  (let* ([instr  (SplitStaffVoice-instr       voice)]
-         [events (SplitStaffVoice-voiceevents voice)])
+  (let* ([instr  (SplitStaffVoice-instr        voice)]
+         [pan    (SplitStaffVoice-pan-position voice)]
+         [events (SplitStaffVoice-voiceevents  voice)])
     @string-append{
     \new PianoStaff {
     <<
     \set PianoStaff.instrumentName = #"@(instr->short-lily instr)"\set PianoStaff.midiInstrument = #"@(instr->lily instr)"
     \new Staff = "up" {
+    \set Staff.midiPanPosition = #"@(pan->lily pan)"
     \new Voice {                       
     \clef treble \autoChange c { @(tempo->lily tempo) @(time-signature->lily time-signature) @(string-join (map voice-event->lily events))))) } \bar "|."
     }
     }
     \new Staff = "down" {
+    \set Staff.midiPanPosition = #"@(pan->lily pan)"
     \new Voice {                       
     \clef bass \autoChange c { @(time-signature->lily time-signature) } | \bar "|."
     }
@@ -323,7 +333,7 @@
            [all-voice-events (map pitch->note-voice-event all-pitches)]
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
            [all-voice-events-with-key-signature-and-clef (cons af-key-signature all-voice-events-with-clef)])
-      (PitchedVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
+      (PitchedVoice 'AcousticGrand 0.0 all-voice-events-with-key-signature-and-clef)))
 
   (define split-staff-voice
     (let* ([bf-key-signature (KeySignature 'Bf 'Major)]
@@ -336,7 +346,7 @@
            [all-voice-events (map pitch->note-voice-event all-pitches)]
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
            [all-voice-events-with-key-signature-and-clef (cons bf-key-signature all-voice-events-with-clef)])
-      (SplitStaffVoice 'AcousticGrand all-voice-events-with-key-signature-and-clef)))
+      (SplitStaffVoice 'AcousticGrand 0.0 all-voice-events-with-key-signature-and-clef)))
   
   (define keyboard-voice
     [let* ([ef-key-signature (KeySignature 'Ef 'Major)]
@@ -353,7 +363,7 @@
            [ascending-bass-voice-events-with-key-signature-and-clef (cons ef-key-signature ascending-bass-voice-events-with-clef)]
            [keyboard-voice-events-pair (cons ascending-treble-voice-events-with-key-signature-and-clef
                                                           ascending-bass-voice-events-with-key-signature-and-clef)])
-      (KeyboardVoice 'AcousticGrand keyboard-voice-events-pair)])
+      (KeyboardVoice 'AcousticGrand 0.0 keyboard-voice-events-pair)])
   
   (define (make-score title voices-groups)
     (Score title "copyright" voices-groups))
@@ -420,7 +430,7 @@
          [voices-notes             (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
          [voices-notes&clef        (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
          [voices-notes&key&clef    (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
-         [split-staff-voices       (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand voice-events)) voices-notes&key&clef)]
+         [split-staff-voices       (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand 0.0 voice-events)) voices-notes&key&clef)]
          [simple-tempo             (TempoDur 'Q 120)]
          [simple-time-signature    (TimeSignatureSimple 4 'Q)]
          [voices-group             (VoicesGroup simple-tempo simple-time-signature split-staff-voices)]
