@@ -34,8 +34,11 @@
   ;; * i is #f and s is #t => (set! c s) and answer #f (on next call, s will be #f)
   ;; * i is #t and s is #f => (set! c (+ c i)) and answer c (wipes out previous s #f)
   ;; * i is #f and s is #f => answer #f and preserve c as is
-  [op-maybe (-> (-> any/c any/c any/c) (-> any/c any/c (or/c #f any/c)))]
+  [carry-op-maybe (-> (-> any/c any/c any/c) (-> any/c any/c (or/c #f any/c)))]
 
+  ;; answer lambda that performs binary op only if both are not #f, else answer #f
+  [bin-op-maybe (-> (-> any/c any/c any/c) (-> any/c any/c (or/c #f any/c)))]
+  
   ;; take all but last element in list
   [inits (-> (listof any/c) any/c)]
   ))
@@ -165,8 +168,8 @@
 ;; * (s)um starts off as first element in the list
 ;; * i(ncrement) iterates across the rest of the elements in the list
 ;; * scanl iterates by apply op with i and s successively
-;; except, op-maybe knows of carry so it can propagate #f
-(define (op-maybe op)
+;; except, carry-op-maybe knows of carry so it can propagate #f
+(define (carry-op-maybe op)
   (let ([c 0]) ;; (c)arry across #f
     (lambda (i s) ;; from scanl: next (i)ncrement, (s)um or accumulator
       (cond [(and i s)
@@ -179,29 +182,55 @@
              c]
             [(and (not i) (not s))
              #f]))))
-  
+
+(define (bin-op-maybe op)
+  (lambda (l r)
+    (if (and l r)
+        (op l r)
+        #f)))
+
 (module+ test
   (check-equal?
-   (scanl (op-maybe +) '(1 2 3 4))
+   ((bin-op-maybe +)  2  1)
+   3)
+  (check-equal?
+   ((bin-op-maybe +)  0  1)
+   1)
+  (check-equal?
+   ((bin-op-maybe +) -1 -1)
+   -2)
+  (check-equal?
+   ((bin-op-maybe +) #f -1)
+   #f)
+  (check-equal?
+   ((bin-op-maybe +)  0 #f)
+   #f)
+  (check-equal?
+   ((bin-op-maybe +) #f #f)
+  #f))
+
+(module+ test
+  (check-equal?
+   (scanl (carry-op-maybe +) '(1 2 3 4))
    '(1 3 6 10))
   (check-equal?
-   (scanl (op-maybe +) '(1 2 3 #f))
+   (scanl (carry-op-maybe +) '(1 2 3 #f))
    '(1 3 6 #f))
   (check-equal?
-   (scanl (op-maybe +) '(#f 2 3 4))
+   (scanl (carry-op-maybe +) '(#f 2 3 4))
    '(#f 2 5 9))
   (check-equal?
-   (scanl (op-maybe +) '(1 #f 3 4))
+   (scanl (carry-op-maybe +) '(1 #f 3 4))
    '(1 #f 4 8))
   (check-equal?
-   (scanl (op-maybe +) '(1 2 #f 4))
+   (scanl (carry-op-maybe +) '(1 2 #f 4))
    '(1 3 #f 7))
   (check-equal?
-   (scanl (op-maybe +) '(1 #f #f 4))
+   (scanl (carry-op-maybe +) '(1 #f #f 4))
    '(1 #f #f 5))
   (check-equal?
-   (scanl (op-maybe +) '(1 #f #f #f))
+   (scanl (carry-op-maybe +) '(1 #f #f #f))
    '(1 #f #f #f))
   (check-equal?
-   (scanl (op-maybe +) '(#f #f #f #f))
+   (scanl (carry-op-maybe +) '(#f #f #f #f))
    '(#f #f #f #f)))

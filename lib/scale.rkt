@@ -134,7 +134,7 @@
 
 (require lily-gen/lib/score-syms)
 
-(require (only-in lily-gen/lib/utils rotate-list-by op-maybe))
+(require (only-in lily-gen/lib/utils rotate-list-by carry-op-maybe))
 
 (require (only-in lily-gen/lib/unfold iterate-list-comprehension-sum))
 
@@ -470,7 +470,7 @@
 (define (transpose/successive scale pitch-range-pair pitch maybe-interval-or-intervalss)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
     (error 'transpose/successive "pitch-range-pair ~v or pitch ~v are not members of scale ~v" pitch-range-pair pitch scale))
-  (map (curry transpose/unguarded scale pitch pitch-range-pair) (scanl (op-maybe list-sum) maybe-interval-or-intervalss)))
+  (map (curry transpose/unguarded scale pitch pitch-range-pair) (scanl (carry-op-maybe list-sum) maybe-interval-or-intervalss)))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (non-empty-listof maybe-interval-or-intervals/c) (non-empty-listof maybe-pitch-or-pitches/c))]
 (define (transpose/absolute scale pitch-range-pair pitch maybe-interval-or-intervalss)

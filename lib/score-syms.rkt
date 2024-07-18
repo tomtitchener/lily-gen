@@ -25,6 +25,8 @@
  sostenuto?
  slur-syms
  slur?
+ pan-syms
+ pan?
  instr-syms
  instr?
  clef-syms
@@ -156,6 +158,19 @@
     SlurOff))
 
 (define (slur? s) (and (symbol? s) (member s slur-syms)))
+
+(define pan-syms
+  '(PanLeft
+    PanEighthLeft
+    PanQuarterLeft
+    PanThreeEighthsLeft
+    PanCenter
+    PanEighthRight
+    PanQuarterRight
+    PanThreeEighthsRight
+    PanRight))
+
+(define (pan? s) (and (symbol? s) (member s pan-syms)))
 
 (define instr-syms
   '(AcousticGrand            Contrabass          LeadFfths 

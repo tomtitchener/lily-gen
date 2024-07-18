@@ -8,6 +8,24 @@
 ;; - transposed register by context (e.g. last previous pitch) maybe-intervalss-motif/c
 ;; first two are wrappers around fourth, third is wrapper around first two and fourth
 ;; fourth is raw data
+;;
+;; motifs: utilities for motifs:
+;; - render-maybe-intervalss-motifs:
+;;     given scale, starting pitch, and motif, render to listof (or/c Note? Rest? Chord? Tuplet?),
+;;     also answers last pitch for segue to render again as new starting pitch
+;; - weighted-maybe-intervalss-motifs/generator:
+;;     given lists of weights and motifss with Scale and initial starting-pitch, randomly select
+;;     one of motifs to render, then repeat using last pitch from previous iteration
+;; - travelling-motifs/generator:
+;;     given scale, starting-pitch, range as min/max pitches, and initial direction (up,down), 
+;;     and a list of motifs, assign weights to motifs based on their ranges vs. the direction,
+;;     then pick randomly using those weights, with goal of keeping output range within limits
+;;     doesn't work reliably due to randomness, can exceed ranges anyway (see ws/motifs-workspace.rkt)
+;; - morph-motifs:
+;;     given starting scale, pitch, motif, and general morpher routine to map old scale, pitch,
+;;     and motif and previous ending pitch to new scale, starting pitch, and motif or else #f
+;;     to signal termination, emit list of list of (or/c Note? Rest? Chord? Tuplet?), one per
+;;     iteration
 
 (provide
  ;; - - - - - - - - -
@@ -23,6 +41,9 @@
  tuplet-motif-element/c
  maybe-intervalss-motifs/c
  weight&maybe-intervalss-motifss/c
+ notes-motif-element/c
+ notes-motif/c
+ morph/c
  
  ;; - - - - - - - - -
  ;; utilities
@@ -30,13 +51,16 @@
  ;; done? function input is most recent (list of (Note or Rest))
  (contract-out
   [render-maybe-intervalss-motifs 
-   (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))))]
+   (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c notes-motif/c))]
    
   [weighted-maybe-intervalss-motifs/generator
    (-> Scale? pitch/c weight&maybe-intervalss-motifss/c generator?)]
 
   [travelling-motifs/generator
    (-> Scale? pitch/c pitch-range-pair/c direction/c (non-empty-listof maybe-intervalss-motif/c) generator?)]
+
+  [morph-motifs
+   (-> Scale? pitch/c maybe-intervalss-motif/c morph/c (non-empty-listof notes-motif/c))]
  ))
 
 (require racket/generator)
@@ -51,7 +75,7 @@
 
 (require lily-gen/lib/generators)
 
-;; individual pitch in motif, each pitch may have multiple controls or be multiple durations long (tied together)
+;; individual pitch or chord represented as one or more intervals, with zero or more controls and one or more durations (tied together)
 (define maybe-intervalss-motif-element/c
   (make-flat-contract #:name 'maybe-intervalss-motif-element/c #:first-order (list/c maybe-interval-or-intervals/c (listof control/c) (non-empty-listof duration?))))
 
@@ -105,6 +129,15 @@
   (make-flat-contract #:name 'weight&maybe-intervalss-motifs/c #:first-order
                       (non-empty-listof (list/c relative-weight/c maybe-intervalss-motif/c))))
 
+(define notes-motif-element/c
+  (make-flat-contract #:name 'notes-motif-element/c #:first-order (or/c Note? Rest? Chord? Tuplet?)))
+
+(define notes-motif/c
+  (make-flat-contract #:name 'notes-motif/c #:first-order (non-empty-listof notes-motif-element/c)))
+
+;; a name for a function contract without interface/class overhead
+(define morph/c (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c (non-empty-listof notes-motif/c) (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
+
 (define/contract (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif)
   (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest? Chord?)))
   (match maybe-pitch-or-pitches-motif
@@ -144,11 +177,11 @@
     (match (sequence->list (unzip maybe-intervalss-motif-elements))
       [(list maybe-intervalss controlss durationss)
        (let* ([maybe-pitch-or-pitchess (transpose/successive scale max-pitch-range-pair begin-pitch maybe-intervalss)]
-              [motifss                 (foldr accum-motifs '() (sequence->list (zip maybe-pitch-or-pitchess controlss durationss)))]
-              [maybe-pitch             (maybe-pitch-or-pitches->maybe-pitch (last maybe-pitch-or-pitchess))])
+              [maybe-pitch             (maybe-pitch-or-pitches->maybe-pitch (last maybe-pitch-or-pitchess))]
+              [motifss                 (foldr accum-motifs '() (sequence->list (zip maybe-pitch-or-pitchess controlss durationss)))])
          (list maybe-pitch (flatten motifss)))])))
 
-;; (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))))
+;; (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c notes-motif/c))
 (define (render-maybe-intervalss-motifs scale begin-pitch motif)
   (match motif
     [(FixedPitchMaybeIntervalsMotif starting-pitch motif)
@@ -169,11 +202,10 @@
         (list (or maybe-pitch begin-pitch) motifs)])]))
 
 ;; (-> Scale? pitch/c weight&maybe-intervalss-motifss/c generator?)
-;; each (generator) -> (or/c (non-empty-listof (or/c Note? Chord? Rest?)) Tuplet?)
 ;; each (maybe-intervals-motif/generator) from weight&maybe-intervalss-motifs gives
 ;; a maybe-intervals-motif/c as either a (non-empty-listof maybe-intervalss-motif-element/c),
 ;; a FixedPitchMaybeIntervalsMotif?, a FixedOctaveMaybeIntervalsMotif? or a TupletMaybeIntervalsMotif?
-;; generates (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))
+;; generator creates (non-empty-listof (or/c Note? Chord? Rest? Tuplet?))
 ;; (-> Scale? pitch/c weight&maybe-intervalss-motifss/c generator?)
 (define (weighted-maybe-intervalss-motifs/generator scale starting-pitch weight&maybe-intervalss-motifss)
   (let ([maybe-intervals-motifss/generator (weighted-list-element/generator weight&maybe-intervalss-motifss)])
@@ -364,4 +396,52 @@
              (let ([next-direction (find-next-direction direction pitch-range next-starting-pitch)])
                (loop next-starting-pitch next-direction))]))))))
 
+;; not a generator because the morpher routine signals conclusion with #f
+;; * initial inputs are enough to get first generation, which serves as input to morpher
+;; * morpher
+;;   - accepts previous scale, starting-pitch, motif, maybe-last-pitch, generations
+;;   - updates scale, starting-pitch, and motif for next generation of notes
+;;   - list with morphed scale, start-pitch, and motif else #f to stop
+;; * answers successive generations of morphed initial-motif as (non-empty-listof notes-motif/c)
+;;   renderer can annotate generations, swallows motifs
+;; nb: maybe should be morph-and-render, does it all-in-one
+;; (-> Scale? pitch/c maybe-intervalss-motif/c morph/c (non-empty-listof notes-motif/c))
+(define (morph-motifs initial-scale initial-start-pitch initial-ints-motif morpher)
+  (let loop ([scale        initial-scale]
+             [start-pitch  initial-start-pitch]
+             [ints-motif   initial-ints-motif]
+             [notes-motifs '()])
+    (match (render-maybe-intervalss-motifs scale start-pitch ints-motif)
+      [(list maybe-last-pitch new-notes-motif)
+       (let ([notes-motifs (append notes-motifs (list new-notes-motif))])
+         (match (morpher scale start-pitch ints-motif maybe-last-pitch notes-motifs)
+           [#f
+            notes-motifs]
+           [(list next-scale next-start-pitch next-ints-motif)
+            (loop next-scale next-start-pitch next-ints-motif notes-motifs)]))])))
 
+(module+ test
+  (require rackunit)
+  ;; trivial: answer scale, motif, last-pitch as new start pitch 
+  ;; so same as successive transposition of same motif,
+  ;; stops after two iterations
+  (define/contract (morpher scale _ motif last-pitch note-motifs)
+    morph/c
+    (if (= 2 (length note-motifs))
+        #f
+        (list scale last-pitch motif)))
+  (let* ([intervals-motif (map (lambda (i) (list i '() (list 'Q))) (list 0 2 2 2 -3 2))]
+         [notes-motif     (morph-motifs C-major (cons 'C '0va) intervals-motif morpher)])
+    (check-equal? notes-motif
+                  (list (list (Note 'C '0va 'Q '() #f)
+                              (Note 'E '0va 'Q '() #f)
+                              (Note 'G '0va 'Q '() #f)
+                              (Note 'B '0va 'Q '() #f)
+                              (Note 'F '0va 'Q '() #f)
+                              (Note 'A '0va 'Q '() #f))
+                        (list (Note 'A '0va 'Q '() #f)
+                              (Note 'C '8va 'Q '() #f)
+                              (Note 'E '8va 'Q '() #f)
+                              (Note 'G '8va 'Q '() #f)
+                              (Note 'D '8va 'Q '() #f)
+                              (Note 'F '8va 'Q '() #f))))))

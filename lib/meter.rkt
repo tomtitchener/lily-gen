@@ -529,7 +529,7 @@
   
   (define voice-eventss-start (list voice-events-1 voice-events-2 voice-events-3 voice-events-4))
   (define voice-events-durs-start (map (lambda (voice-events) (apply + (map voice-event->duration-int voice-events))) voice-eventss-start))
-  (define voices-start (map (lambda (voice-events) (PitchedVoice 'AcousticGrand 0.0 voice-events)) voice-eventss-start))
+  (define voices-start (map (lambda (voice-events) (PitchedVoice 'AcousticGrand 'PanCenter voice-events)) voice-eventss-start))
   (define voices-stop (extend-voices-durations four-four-time-signature voices-start))
   (define voice-eventss-stop (map PitchedVoice-voiceevents voices-stop))
   (define voice-events-durs-stop (map (lambda (voice-events) (apply + (map voice-event->duration-int voice-events))) voice-eventss-stop))

@@ -1,0 +1,33 @@
+
+Using morph-motifs:
+
+done:
+
+- 1) code routine but not as generator
+- 2) create simple unit test that just successively transposes
+- 3) add pan as dynamic control with midi tag
+
+to do:
+
+- 1) integrate minimally into ws/sketch-workspace.rkt
+
+
+-- ideas
+
+- choir of fast voices all on same motif, experiment with dynamic pan, for chaining
+  use matrix mod like for bittersweet transpositions
+  * add pan as control
+    - verify dynamic pan works by hacking control into existing .ly file (done)
+    - expand rendering of controls to flag some with midi tag, e.g. pan, dynamic range, etc.
+    - manipulate choir as a whole e.g. 4/8 voices all same instrument
+      * start with all mid-channel, brief splits by half/quarter/eighth, back and forth
+      * then chain L->R transition in sequence starting all center or distributed
+      * sequence continuously around L->R/L->R ... for swirl or L->R/R->L ... for bounce
+
+  * rotate in and out from unison, combined with scale mods, flats below, sharps above etc.
+    scale mods make more sense combined with rotation, though maybe reverting back from
+    rotation to unison could continue with different scale
+
+  * incremental synchronicity mods like piano phase, starting with one or more voices forward,
+    others backward, one-by-one, sequentially or in chorus
+

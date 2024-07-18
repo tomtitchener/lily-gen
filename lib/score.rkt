@@ -56,16 +56,17 @@
 (require (only-in lily-gen/lib/scale pitch->chromatic-index))
 
 (define control/c
-  (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string?)))
+  (make-flat-contract #:name 'control/c #:first-order (or/c accent? dynamic? swell? sustain? sostenuto? slur? string? pan?)))
 
 (define num-denom/c
   (make-flat-contract #:name 'num-denom/c #:first-order (cons/c natural-number/c duration?)))
 
 (struct/contract Sempre ([controls (listof control/c)]))
 
+;; inverse of Sempre, revert to ordinary
 (struct Ordinale ())
  
-;; TBD: independent voices on the same staff, much more complicated to render as Lilypond.
+;; TBD: independent voices on the same staff, much more complicated Lilypond syntax.
 
 ;; TBD: if first item was pitch/c then Note would better parallel Chord
 (struct/contract Note ([pitch    pitch-class?]
@@ -214,7 +215,7 @@
     [(? clef?)           0]))
 
 (struct/contract PitchedVoice ([instr        instr?]
-                               [pan-position real?]
+                               [pan-position pan?]
                                [voiceevents  (listof voice-event/c)])
                  #:transparent)
 
@@ -222,12 +223,12 @@
   (make-flat-contract #:name 'voice-events-pair/c #:first-order (cons/c (listof voice-event/c) (listof voice-event/c))))
 
 (struct/contract KeyboardVoice ([instr           instr?]
-                                [pan-position    real?]
+                                [pan-position    pan?]
                                 [voiceeventspair voice-events-pair/c])
                  #:transparent)
 
 (struct/contract SplitStaffVoice ([instr        instr?]
-                                  [pan-position real?]
+                                  [pan-position pan?]
                                   [voiceevents  (listof voice-event/c)])
                  #:transparent)
 
@@ -247,6 +248,9 @@
                               [voices         (listof voice/c)])
                  #:transparent)
 
+;; NB:  rendering voices-groups serially requires they all have the same count of voices,
+;;      e.g. a consort of identical instruments, NOT a horizontal grouping by e.g. strings,
+;;      woodwinds, brass, percussion
 (define/contract (score-ctor-guard title copyright voices-groups type-name)
   (-> string? string? (listof VoicesGroup?) symbol? (values string? string? (listof VoicesGroup?)))
   (if (= 1 (length voices-groups))

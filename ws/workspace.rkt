@@ -1,6 +1,6 @@
 #lang racket
 
-;; workspace.rkt:  experiment with REPL using parameterization
+;; workspace.rkt:  experiment with enhanced REPL using parameterization
 
 (provide (all-defined-out))
 
@@ -52,8 +52,8 @@
   (-> clef? (listof voice-event/c) (listof voice-event/c))
   (add-bass-or-treble-clefs-to-voice-events voice-events clef))
 
-;; to use this, provide list of voice/c, consumes tempo/param, time-signature/param,
-;; score-title/param, score-copyright/param
+;; to use this, provide list of voice/c,
+;; consumes tempo/param, time-signature/param, score-title/param, score-copyright/param
 (define/contract (score/parameterized voices)
   (-> (listof voice/c) Score?)
   (let* ([voices-group (VoicesGroup (tempo/param) (time-signature/param) voices)]

@@ -1,0 +1,339 @@
+
+Configurable rhythm generator
+
+- meter
+- upbeat vs. downbeat (starts off beat vs. starts on beat)
+- duration
+- busy-ness / heat (base unit from meter, how many sub-divisions)
+- count of repetitions 
+- use of tuplets (part of sub-divisions in heat?)
+- fixed (meter, ?) vs. weighted choice (repetition count, ?)
+
+  ? given meter, should total duration be an individual bar,
+    an integral count of bars, or should I ignore bar lines?
+    don't want to rule-out "scurrying upbeats growing more
+    finely divided approaching the end" ?
+
+  ? downbeat starts on beat, maybe on bar, can end before next,
+    upbeat starts off bar and beat, never spans the next beat
+    or bar, or maybe upbeat avoids bar and half-bar divisions
+    only ?
+    
+Configurable rhythm progression generator, modifying memo-ized rhythms
+
+- given list of choices (results?) for rhythm structure,
+  tweak one component like increasing/decreasing busy-ness,
+  duration, repetitions
+- or make variation with equal quality but just different
+  picks from random weights
+- a sequence of individual progressions for an arc up to
+  some metric of saturation
+
+Composition of generators
+
+- combine up/down beats for patterns as starting point,  
+- combine progression generators for components
+
+Continue sempre behavior for fine articulation, soft dynamics
+with accents and dynamics overriding sempre to delineate up/down
+
+Seems intuitive to require TimeSignature except TimeSignatureCompound
+allows for arbitrary lists of arbitrarily-grouped time signatures, which
+seems out-of-scope.  The other two, TimeSignatureSimple and TimeSignatureGrouping
+are grounded in a single num denom (list/c natural-number/c dration?) so just
+supply that.
+
+-------------
+
+Starting point:  integral bar count of combination of one upbeat pattern and one downbeat pattern,
+with caller padding from start of bar to upbeat and from end of downbeat to end of bar.
+
+- generator for upbeats
+- generator for downbeats
+  * inputs
+    - num, denom (natural-number/c duration?)
+    - total duration as exact-positive-integer? less 
+      than duration of bar as (* num (duration->int denom))
+    - shortest subdivision of beat as natural-number/c
+      nb: may imply tuplet as 3, 5, 7 ..
+
+- upbeats accelerate so need to start slow, add subdivisions
+  to fill out total duration?
+
+-------------
+
+Complicated and sterile, nothing to get excited about coding.
+
+Constraining and automatic, absent direct steering or customizing.
+
+Seeding with rhythms and using those for basis to extend?
+
+The larger issue: what's a rewarding level of design?
+
+My instinct, acquired over years of programming, is to drive for the most general solution, which turns out to be the most abstract.
+
+It's a fun practice, I find it rewarding, at least in the very short term of making some sort of recognizable progress.
+
+That hasn't really helped with the *composing* side of my hobby though.
+
+<splice history blah blah ..>
+
+The prime example is atomizing lists of lists of atoms:  durations, accents, maybe pitch-classes, octaves.
+
+Then randomly selecting sub-lists to build lists of Notes and Rests, later on Chords and Tuplets too.
+
+I've found it very hard to predict if I'll like the resulting texture.
+
+The only real strategy has been to layer a bunch of voices all using a diatonic scale.
+
+Then I've applied that to a basic canon with the same line spread across all voices.
+
+Then raising and lowering individual pitches stepwise, to add some sort of variation.
+
+Or shortening and lengthening the line, maybe replacing missing pitches with octaves.
+
+The result is sort of "minimalist trance", a compounded anodyne, something I'd like move on from.
+
+</splice>
+
+One thing I definitely want to get away from is the constantly-saturated texture beating on you over and over.
+
+More pragmatically, it'd be nice to have tools to experiment with more interactively.
+
+At a very simple-minded level that means sampling efforts and steering the piece in response, interactively.
+
+It also means resisting the urge to abstract down to the fundamentals, like I started out after my plans waiting for my BP check.
+
+It comes down to improving the balance between composing, awkward and challenging, vs. coding, much easier.
+
+One practical matter: the role of chaining transpositions.
+
+That seems to buy me too much unpredictability with randomly selected motifs.
+
+What about growing a motif from a kernel and a set of rules?
+
+Iterate from the start and save off each iteration and choose which to render and how (sequential vs. simultaneous)?
+
+Part of kernel can be a lists of transpositions + durations (maybe-intervalss-motif/c).
+
+Get wrapped in one of maybe-intervalss-motifs/c (including naked).
+
+Question becomes: what's a satisfying level of composed input vs. algorithmic extension?
+
+I've tended to minimize the composed input, or abstracted away to lists of primitives.
+
+As opposed to, for example, the list of maybe-intervalss-motifs/c.
+
+Which decomposes to a maybe-intervalss-motif/c.
+
+Which is just (non-empty-listof maybe-intervalss-motif-element/c)
+
+Which is a typed-list (list/c maybe-interval-or-intervals/c (listof control/c) (non-empty-listof duration?))
+
+By itself, it takes a starting-pitch from the previous context.
+
+Otherwise it's contained in a wrapper that supplies local pitch/c or octave/c.
+
+The only additional complicating factor is if the (non-empty-listof duration?) in the maybe-intervalss-motif-element/c are as is or form tuplets.
+
+I think the lowest level of necessary binding is the components in maybe-intervalss-motif-element/c.
+
+There'd still be some math to wrap the motif in a tuplet.
+
+One approach would be to scale the tuplet num, denom, and duration values to match, if that's possible.
+
+Another would be to add rests to extend the total duration to fit e.g. 3 4 'E, 6 5 'S, etc.
+
+But even that makes me wonder if the effort doesn't put the cart before the horse yet again.
+
+I can imagine coding something clever up, testing it, and then never using it.
+
+Like I'm falling again into the focus on coding vs. focus on both composing and coding.
+
+So, backing out a level, the question becomes, what do I aim for?
+
+Consider the rising triplets, or even the challenge of combining motifs that cover a wide range.
+
+I can't combine them one-after-the-other without quickly exceeding the range of the piano.
+
+I could make simple variations by swapping the individual elements around.
+
+Or I could reverse the signs on all the intervals to get a strictly descending variant.
+
+Or I could reverse the signs of half the intervals.
+
+I'd have to be careful about the start pitches to keep things in range.
+
+So that's one sort of idea.
+
+The other issue just looking at the score as I type this, is the monotony of repeated fixed starting pitches.
+
+An ostinato like that stands out--tedious unless more continuous or more background.
+
+Expanding back even farther, I remind myself of the goal of sparseness, of making something that's not always fully saturated.
+
+That could be a series of short swirls that collectively progress ... somehow.
+
+To start, there could be an accretion of swirl motifs, recapitulating and extending or otherwise growing and shrinking in an arc.
+
+-----------
+
+Well, this has been several days of musing without doing anything at all.
+
+Maybe that's because I've never been good at, or even attempted, an architecture.
+
+I've left countless text files here and there with grand plans that I lose interest in or never follow up on.
+
+I've had the most fun, got the most results, just poking around, seeing what happens.
+
+Now I'd like to take that past the weighted-random-selection of whatever--pitches, accents, motifs--to do ... what?
+
+Well, something with growth, for one thing, something that goes somewhere, then somehere else, in a coherent pattern.
+
+I've sort of done this with cumulative transposition of randomly chosen motifs which collectively ascend or descend.
+
+Now I'm thinking about doing that but with a single voice, something interesting to listen to at a finer scale.
+
+Or maybe something that comes from a single process that intermittently generates additional voices as it goes along.
+
+--------
+
+All this points to a generator of motifs, something beyond the current generator, which randomly selects from a weighted list of motifs.
+
+The idea is to emit a motif at a time, growing the next based on parameters and what came before.
+
+Is a list of maybe-intervalss-motif-element/c sufficiently abstract to serve for input?
+
+Would it be better to include unit components of a motif instead of an entire motif to grow and shrink though concatentation?
+
+Doesn't seem likely, better to just use a bunch of short motifs.  
+
+Note the only significant variant is TupletMaybeIntervalsMotif, and that decisions about transposition or anchoring the next motif can easily be made made locally.
+
+What about trying something that keeps track of register, reversing direction when you reach a boundary?
+
+The motifs would have to include some that ascend, some that descend, maybe some that stay put for variety, maybe 10 / 15 short motifs for variety?
+
+Params would include the upper and lower register pitches and starting pitch.
+
+For randomness, vary weights internally pick-by-pick.
+
+For example, if starting pitch was closer to lower register, then weights would make it more likely, but not certain, that motif ascends.
+
+Then based on resulting location, weights would get updated, and repeat.
+
+Orientation (up/down) could vary in amplitude as boundary approaches.
+
+Make points of strongest polarity in mid-range, keeping overall direction in mind?
+
+Could add awareness of recent polarity choices or maybe actual transposition intervals to guide rate of change.
+
+Keep a list of last 5 choices, sum together to enhance or dampen next distribution of weights?
+
+Maybe do that later?
+
+Also consider tuplet layering as another dimension, maybe correlated with a sub-range?
+
+Would need to select motifs up to a tuple numerator e.g. total duration of 5 eighths to make a tuple of 5 4 'H.
+
+Or transition could be polar as well, e.g. going faster and faster (3 in time of 2, 4 in time of 3, etc) after a period of duration?
+
+Also maybe do later?
+
+------------
+
+Or for something different, how about a background of arpeggios of different spans mixed with sostenuto pedal for subsets of notes?
+
+Here the interesting transition would be the harmonic progression of the sustained notes against the surface of the arpeggios.
+
+It'd be possible to be very precise where the sostenuto starts and stops.
+
+------------
+
+To start somewhere, try a motif generator with a scale, a range, a starting pitch, a direction (up or down), and a handful of motifs all of the simplest type.
+
+For initialization, tag motifs as ascending, descending, neither, and pick an initial set of weights based on the direction.
+
+For refinement, scale the weights based on the distance of the starting-pitch from middle C.
+
+The idea would be to have the fastest rate of change in the middle of the range and a slower rate of change as you approach the limit.
+
+This scaling of the rate of change can be staged at a later phase, possibly even subject a scaling factor input argument.
+
+Choose and generate a motif.
+
+If the motif exceeds the range, then flip the direction for the next iteration.
+
+To scale weights for a given direction, bump the weight with a positive or negative offset, keeping in mind weights should always be > 0.
+
+Pick a max range of weights, say 1-10 so 5 is neutral, where they all can start.
+
+Then extract the current octave (C based) given the current starting-pitch and select a scaling factor that's higher the closer you are to middle C.
+
+Bump the motif weights by the scaling factor, positive or negative, depending on how they align with the current direction.
+
+The generator should then run infinitely so should be controlled with while/generator.
+
+--------
+
+Experienting with the minimal generator at 50% and 50% 1 and -1, I discover that even the even odds don't guarantee 0 sum over long runs.
+
+I had thought first to find the way to weight the motifs equally by the scale degrees of thier transpositions.
+
+After some brain bashing and frustration coming up with a reliable formula, I thought I'd reduce it to evens to test my hypothesis.
+
+generators.rkt> (define test-gen (weighted-list-element/generator (list (list 50 1) (list 50 -1))))
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 100) test-gen))
+-18
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 100) test-gen))
+-14
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 1000) test-gen))
+-70
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 1000) test-gen))
+8
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10000) test-gen))
+118
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10000) test-gen))
+158
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 100000) test-gen))
+266
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 100000) test-gen))
+-494
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 1000000) test-gen))
+-4
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10000000) test-gen))
+1810
+
+But what I found is that, while the sums assumedly cross through 0 now and then, for any N, they won't necessarily even out.
+
+So that makes the idea that I can come up with neutral weights and perturb those to reliably ascend or descend is just wrong.
+
+At least, not without adjusting the weights to favor one or the other, it doesn't take much:
+
+generators.rkt> (define test-gen (weighted-list-element/generator (list (list 48 1) (list 52 -1))))
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10) test-gen))
+-2
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10) test-gen))
+-6
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 100) test-gen))
+-12
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 1000) test-gen))
+-34
+generators.rkt> (apply + (while/generator->list (sum<=? (const 1) 10000) test-gen))
+-328
+
+Even doing this with (49 1) (51 -1) I still mainly come up with negative sums.
+
+So the moral of the story is ... there is no perfect evenly-balanced weighting.  All that equal weights means is random result up or down.
+
+The range of the divergence increases with the number of tries.
+
+So to unravel way back to the start, my API needs an input direction, a list of motifs, and a range.
+
+I need to generate an approximation of equal weights given the spans of the motifs grouped by positive and negative.
+
+And then I need a way to tweak those weights in favor of the indicated direction.
+
+---------------------
+
+Or after getting basically nowhere just thinking this through, how about trying out a texture generator?

@@ -14,6 +14,7 @@
  sustain->lily
  sostenuto->lily
  slur->lily
+ pan->lily
  ann->lily          ;; formats annotation with markup bracket
  instr->lily        ;; full midi instrument name
  instr->short-lily  ;; shortened instrument name for left margin
@@ -115,6 +116,13 @@
 
 (define (slur->lily slur)
   (hash-ref sym-slur-hash slur))
+
+(define pan-vals '(-1.0 -0.125 -0.25 -0.375 0.0 0.125 0.25 0.375 1.0))
+
+(define sym-pan-hash (make-hash (map cons pan-syms pan-vals)))
+
+(define (pan->lily pan)
+  (format "\\set Staff.midiPanPosition = ~v" (hash-ref sym-pan-hash pan)))
 
 (define (ann->lily ann)
   (string-append "^\\markup { \\italic \"" ann "\" }"))

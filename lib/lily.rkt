@@ -28,6 +28,7 @@
         [(sustain?    control) (sustain->lily   control)]
         [(sostenuto?  control) (sostenuto->lily control)]
         [(slur?       control) (slur->lily      control)]
+        [(pan?        control) (pan->lily       control)]
         [(string?     control) (ann->lily       control)]
         [else (error 'control->lily "unexpected control ~e" control)]))
 
@@ -119,6 +120,15 @@
         [mode  (KeySignature-mode  keysig)])
     (format "\\key ~a \\~a" (pitch-class->lily pitch) (mode->lily mode))))
 
+;; to avoid stuffing repeated staccato, accent, sustain, etc. controls for
+;; each note in a passage, use the Sempre and Orindale voice-events
+;; Sempre writes one instance of "sempre <ctrl ...>" in italic at the start
+;; and then in the midi data only, repeats <ctrl ...> for each voice-event
+;; that follows until the Ordinale that ends the Sempre
+;; gets dry/detache especially for percussion like piano
+
+;; sempre data keeps state for voice being rendered to remember controls
+;; for repeated notes, avoid controls for tied notes
 (define sempre-data (make-hash '((ctrls . ())(mkup . #f)(ptie . #f))))
 
 ;; \markup \italic "sempre pppp e staccatissimo"
@@ -218,14 +228,11 @@
         [events (PitchedVoice-voiceevents  voice)])
     @string-append{
     \new Voice
-    {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)" \set Staff.midiPanPosition = @(pan->lily pan)
+    {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)" @(pan->lily pan)
           @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily events)))) \bar "|."
     }
     }))
 
-(define (pan->lily pan)
-  (format "~v" pan))
-  
 (define/contract (keyboard-voice->lily tempo time-signature voice )
   (-> tempo/c time-signature/c KeyboardVoice? string?)
   (let* ([instr      (KeyboardVoice-instr           voice)]
@@ -238,13 +245,13 @@
     <<
     \set PianoStaff.instrumentName = #"@(instr->short-lily instr)" \set PianoStaff.midiInstrument = #"@(instr->lily instr)"
     \new Staff = "rh" {
-    \set Staff.midiPanPosition = @(pan->lily pan)
+    @(pan->lily pan)
     \new Voice {                       
     @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily treble)))) \bar "|."
     }
     }
     \new Staff = "lh" {
-    \set Staff.midiPanPosition = @(pan->lily pan)
+    @(pan->lily pan)
     \new Voice {                       
     @(string-join (cons (time-signature->lily time-signature) (map voice-event->lily bass))) \bar "|."
     }
@@ -264,13 +271,13 @@
     <<
     \set PianoStaff.instrumentName = #"@(instr->short-lily instr)"\set PianoStaff.midiInstrument = #"@(instr->lily instr)"
     \new Staff = "up" {
-    \set Staff.midiPanPosition = #"@(pan->lily pan)"
+    @(pan->lily pan)
     \new Voice {                       
     \clef treble \autoChange c { @(tempo->lily tempo) @(time-signature->lily time-signature) @(string-join (map voice-event->lily events))))) } \bar "|."
     }
     }
     \new Staff = "down" {
-    \set Staff.midiPanPosition = #"@(pan->lily pan)"
+    @(pan->lily pan)
     \new Voice {                       
     \clef bass \autoChange c { @(time-signature->lily time-signature) } | \bar "|."
     }
@@ -333,7 +340,7 @@
            [all-voice-events (map pitch->note-voice-event all-pitches)]
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
            [all-voice-events-with-key-signature-and-clef (cons af-key-signature all-voice-events-with-clef)])
-      (PitchedVoice 'AcousticGrand 0.0 all-voice-events-with-key-signature-and-clef)))
+      (PitchedVoice 'AcousticGrand 'PanCenter all-voice-events-with-key-signature-and-clef)))
 
   (define split-staff-voice
     (let* ([bf-key-signature (KeySignature 'Bf 'Major)]
@@ -346,7 +353,7 @@
            [all-voice-events (map pitch->note-voice-event all-pitches)]
            [all-voice-events-with-clef (add-bass-or-treble-clefs-to-voice-events all-voice-events 'Treble)]
            [all-voice-events-with-key-signature-and-clef (cons bf-key-signature all-voice-events-with-clef)])
-      (SplitStaffVoice 'AcousticGrand 0.0 all-voice-events-with-key-signature-and-clef)))
+      (SplitStaffVoice 'AcousticGrand 'PanCenter all-voice-events-with-key-signature-and-clef)))
   
   (define keyboard-voice
     [let* ([ef-key-signature (KeySignature 'Ef 'Major)]
@@ -363,7 +370,7 @@
            [ascending-bass-voice-events-with-key-signature-and-clef (cons ef-key-signature ascending-bass-voice-events-with-clef)]
            [keyboard-voice-events-pair (cons ascending-treble-voice-events-with-key-signature-and-clef
                                                           ascending-bass-voice-events-with-key-signature-and-clef)])
-      (KeyboardVoice 'AcousticGrand 0.0 keyboard-voice-events-pair)])
+      (KeyboardVoice 'AcousticGrand 'PanCenter keyboard-voice-events-pair)])
   
   (define (make-score title voices-groups)
     (Score title "copyright" voices-groups))
@@ -430,7 +437,7 @@
          [voices-notes             (map durs&pits->notess voices-durationss self-sim-voices-pitchess)]
          [voices-notes&clef        (map (lambda (voice-notes) (add-bass-or-treble-clefs-to-voice-events voice-notes 'Treble)) voices-notes)]
          [voices-notes&key&clef    (map (lambda (voice-events) (cons ef-key-signature voice-events)) voices-notes&clef)]
-         [split-staff-voices       (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand 0.0 voice-events)) voices-notes&key&clef)]
+         [split-staff-voices       (map (lambda (voice-events) (SplitStaffVoice 'AcousticGrand 'PanCenter voice-events)) voices-notes&key&clef)]
          [simple-tempo             (TempoDur 'Q 120)]
          [simple-time-signature    (TimeSignatureSimple 4 'Q)]
          [voices-group             (VoicesGroup simple-tempo simple-time-signature split-staff-voices)]
