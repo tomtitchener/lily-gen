@@ -61,6 +61,10 @@
 
   [morph-motifs
    (-> Scale? pitch/c maybe-intervalss-motif/c morph/c (non-empty-listof notes-motif/c))]
+
+  ;; increment with wrap of pan for current motif, init to left
+  [increment-pan-morpher
+   morph/c]
  ))
 
 (require racket/generator)
@@ -445,3 +449,32 @@
                               (Note 'G '8va 'Q '() #f)
                               (Note 'D '8va 'Q '() #f)
                               (Note 'F '8va 'Q '() #f))))))
+
+
+(define (increment-pan pan)
+  (let ([pan-idx (index-of pan-syms pan)])
+    (list-ref pan-syms (modulo (add1 pan-idx) (length pan-syms)))))
+
+(define (increment-or-mod-pan ctrls)
+  (match ctrls
+    ['() (list 'PanLeft)]
+    [(cons ctrl ctrls) 
+     (if (pan? ctrl)
+         (cons (increment-pan ctrl) ctrls)
+         (cons 'PanLeft (cons ctrl ctrls)))]))
+
+(define (increment-intervals-motif-pan motif)
+  (match (car motif)
+    [(list ints ctrls durs) (list ints (increment-or-mod-pan ctrls) durs)]))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (increment-intervals-motif-pan (list (list '() '() '()))) (list '() '(PanLeft) '()))
+  (check-equal? (increment-intervals-motif-pan (list (list '() '(PanLeft) '()))) (list '() '(PanEighthLeft) '()))
+  (check-equal? (increment-intervals-motif-pan (list (list '() '(PanRight) '()))) (list '() '(PanLeft) '()))
+  (check-equal? (increment-intervals-motif-pan (list (list '() '(Accent) '()))) (list '() '(PanLeft Accent) '())))
+
+;; (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c (non-empty-listof notes-motif/c) (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
+(define (increment-pan-morpher scale initial-pitch motif last-pitch notes-motifs)
+  (list scale initial-pitch (increment-intervals-motif-pan motif)))
+

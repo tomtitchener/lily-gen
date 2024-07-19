@@ -71,12 +71,17 @@
 ;; next: feed this into a single-voice score just to see what it sounds like,
 ;; may want additional iteration, e.g. x y y or x x y
 
-
 ;; parameterize by
 ;; - bin-op with default '+'
 ;; - iteration count, default is 1
 ;;   iteration tells count of times to apply sum, e.g.
-;;    (1 2) (10 20) -> (11 21 12 22) for once
+;;   ((1 2) (10 20)) -> (((2 3) (3 4)) ((11 12) (21 22)) ((11 21) (12 22)) ((20 30) (30 40)))
+;;
+;;        (1 2) (1 2) -> ((2 3) (3 4)) -- (((+ 1 1) (+ 2 1)) ((+ 2 1) (+ 2 2)))
+;;                    (1 2) (10 20) -> ((11 12) (21 22)) 
+;;                                      (10 20) (1 2) -> ((11 21) (12 22) 
+;;                                                      (10 20) (10 20) -> ((20 30) (30 40)) 
+;;
 (define (self-sum-product as)
   (-> (non-empty-listof (non-empty-listof exact-integer?)) (non-empty-listof (non-empty-listof (non-empty-listof exact-integer?))))
   (for*/list ([is as] [js as])
@@ -117,16 +122,16 @@
     (SplitStaffVoice #;PitchedVoice (instr/param) 'PanCenter norrs)))
 
 ;; same total count as next
-#;(parameterize ((score-title/param "self-sim-prod") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sim-prod"))
+(parameterize ((score-title/param "self-sum-prod-1") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-1"))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
 ;; all fours
-#;(parameterize ((score-title/param "self-sim-prod-2") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sim-prod-2")
+(parameterize ((score-title/param "self-sum-prod-2") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-2")
                                                        (self-same-mintss/param '((0 7 -14 0) (0 1 2 4) (-1 -2 0 -1) (-6 3 -2 3))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
 ;; chords, really boring
-#;(parameterize ((score-title/param "self-sim-prod-3") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sim-prod-3")
+(parameterize ((score-title/param "self-sum-prod-3") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-3")
                                                        (self-same-mintss/param '((0 2 4 6) (7 5 3 1) (2 1 2 -2 -1 -2) (3 2 3 0 10 ))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
@@ -230,38 +235,10 @@
 ;; because the morpher always knows the current motif, it just won't know all the previous
 ;; generations of the motifs, the same way the morpher only knows the current start-pitch
 ;; and scale, so if I want the morpher to work off the previous ints-motifs then I just 
-;; accumulate them the same way I do with each notes-motif and pass expand the morpher
+;; accumulate them the same way I do with each notes-motif and expand the morpher
 ;; signature to take a list of ints-motifs instead of the current ints-motif, plus maybe
 ;; the previous scale and start-pitch
 ;;
-
-(define (advance-pan pan)
-  (let ([pan-idx (index-of pan-syms pan)])
-    (list-ref pan-syms (modulo (add1 pan-idx) (length pan-syms)))))
-
-(define (add-or-mod-pan ctrls)
-  (match ctrls
-    ['() (list 'PanLeft)]
-    [(cons ctrl ctrls) 
-     (if (pan? ctrl)
-         (cons (advance-pan ctrl) ctrls)
-         (cons 'PanLeft (cons ctrl ctrls)))]))
-
-(define (advance-intervals-motif-pan motif)
-  (match (car motif)
-    [(list ints ctrls durs) (list ints (add-or-mod-pan ctrls) durs)]))
-
-(module+ test
-  (require rackunit)
-  (check-equal? (advance-intervals-motif-pan (list (list '() '() '()))) (list '() '(PanLeft) '()))
-  (check-equal? (advance-intervals-motif-pan (list (list '() '(PanLeft) '()))) (list '() '(PanEighthLeft) '()))
-  (check-equal? (advance-intervals-motif-pan (list (list '() '(PanRight) '()))) (list '() '(PanLeft) '()))
-  (check-equal? (advance-intervals-motif-pan (list (list '() '(Accent) '()))) (list '() '(PanLeft Accent) '())))
-
-;; (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c (non-empty-listof notes-motif/c) (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
-(define/contract (pan-morpher scale initial-pitch motif last-pitch notes-motifs)
-  morph/c
-  (list scale initial-pitch (advance-intervals-motif-pan motif)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Eventually:
