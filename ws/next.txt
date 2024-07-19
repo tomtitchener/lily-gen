@@ -12,7 +12,7 @@ to do:
 - 1) integrate minimally into ws/sketch-workspace.rkt
 
 
--- ideas
+- ideas
 
 - choir of fast voices all on same motif, experiment with dynamic pan, for chaining
   use matrix mod like for bittersweet transpositions
