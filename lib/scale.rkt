@@ -449,6 +449,7 @@
            (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval-or-intervals))])
              (pitch-in-range? pitch-range-pair xposed-pitch))))]))
 
+;; converts list of successive intervals into absolute intervals
 ;; LHS  RHS
 ;; list list => take first element from LHS and sum all elements on RHS
 ;; list item => take first element from LHS and sum with item on RHS
@@ -456,15 +457,18 @@
 ;; item item => sum two items as ordinary +
 ;; NB: something about scanl gets the args so rhs is first, lhs is second
 (define (list-sum rhs lhs)
-  (cond [(and (list? lhs) (list? rhs))
-         (let ([l (first lhs)])
-           (map (curry + l) rhs))]
-        [(and (list? lhs) (not (list? rhs)))
-         (+ (first lhs) rhs)]
-        [(and (not (list? lhs)) (list? rhs))
-         (map (curry + lhs) rhs)]
-        [else
-         (+ lhs rhs)]))
+  (cond
+    [(or (not lhs) (not rhs)) ;; redundant when op for carry-op-maybe
+     #f]
+    [(and (list? lhs) (list? rhs))
+     (let ([l (first lhs)])
+       (map (curry + l) rhs))]
+    [(and (list? lhs) (not (list? rhs)))
+     (+ (first lhs) rhs)]
+    [(and (not (list? lhs)) (list? rhs))
+     (map (curry + lhs) rhs)]
+    [else
+     (+ lhs rhs)]))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (non-empty-listof maybe-interval-or-intervals/c) (non-empty-listof maybe-pitch-or-pitches/c))]
 (define (transpose/successive scale pitch-range-pair pitch maybe-interval-or-intervalss)
