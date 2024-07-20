@@ -82,10 +82,38 @@
 ;;                                      (10 20) (1 2) -> ((11 21) (12 22) 
 ;;                                                      (10 20) (10 20) -> ((20 30) (30 40)) 
 ;;
-(define (self-sum-product as)
+#;(define/contract (self-sum-product as)
   (-> (non-empty-listof (non-empty-listof exact-integer?)) (non-empty-listof (non-empty-listof (non-empty-listof exact-integer?))))
   (for*/list ([is as] [js as])
-    (map (lambda (j) (map (lambda (i) ((bin-op-maybe +) j i)) is)) js)))
+    (map (lambda (j) (map (lambda (i) ((bin-op-maybe sum-int-or-ints) j i)) is)) js)))
+
+(define/contract (sum-int-or-ints lhs rhs)
+  (-> maybe-interval-or-intervals/c maybe-interval-or-intervals/c maybe-interval-or-intervals/c)
+  (cond
+    [(and (list? lhs) (list? rhs))
+     (map (curry + (car lhs)) rhs)]
+    [(and (not (list? lhs)) (list? rhs))
+     (map (curry + lhs) rhs)]
+    [(and (list? lhs) (not (list? rhs)))
+     (+ (car lhs) rhs)]
+    [else
+     (+ lhs rhs)]))
+
+(module+ test
+  (require rackunit)
+  (check-equal? ((bin-op-maybe sum-int-or-ints) #f #f) #f)
+  (check-equal? ((bin-op-maybe sum-int-or-ints) #f 1) #f)
+  (check-equal? ((bin-op-maybe sum-int-or-ints) (list 1 2) #f) #f)
+  (check-equal? ((bin-op-maybe sum-int-or-ints) (list 1 2) (list 1 2)) (list 2 3))
+  (check-equal? ((bin-op-maybe sum-int-or-ints) 1 (list 1 2)) (list 2 3))
+  (check-equal? ((bin-op-maybe sum-int-or-ints) (list 1 2) 2) 3))
+
+;; handle maybe-interval-or-intervals/c vs. just eact-integer? for rests and chords
+;; - (bin-op-maybe +) works for maybe part, but '+' doesn't work for non-empty-list-of interval/c
+(define/contract (self-sum-product as)
+  (-> (non-empty-listof (non-empty-listof maybe-interval-or-intervals/c)) (non-empty-listof (non-empty-listof (non-empty-listof maybe-interval-or-intervals/c))))
+  (for*/list ([is as] [js as])
+    (map (lambda (j) (map (lambda (i) ((bin-op-maybe sum-int-or-ints) j i)) is)) js)))
 
 (module+ test
   (require rackunit)
@@ -108,32 +136,47 @@
      ((0 9 4 9 4 9) (-7 2 -3 2 -3 2) (-8 1 -4 1 -4 1))
      ((-12 -3 -8 -3 -8 -3) (-3 6 1 6 1 6) (-8 1 -4 1 -4 1) (-3 6 1 6 1 6) (-8 1 -4 1 -4 1) (-3 6 1 6 1 6)))))
 
+;; | #f | exact-integer? | listof exact-integer?
 (define self-same-mintss/param  (make-parameter '((0 7 -14 0) (0 1 2) (6 -1 -2) (-6 3 -2 3 -2 3))))
 
 (define start-pitch/param  (make-parameter (cons 'C '0va))) ;; coordinate with scale/param
 
 (define duration/param (make-parameter 'S))
 
-;; first, get this into a voice and call the workspace routines to generate a score
 (define (gen-ssprod-voice/param)
-  (let* ([mints (flatten (self-sum-product (self-same-mintss/param)))]
-         [mpits (transpose/absolute (scale/param) (scale-range-min-max-pair/param) (start-pitch/param) mints)]
-         [norrs (map (lambda (mpit) (if mpit (Note (car mpit) (cdr mpit) (duration/param) '() #f) (Rest (duration/param)))) mpits)])
+  (let* ([mints  (apply append (apply append (self-sum-product (self-same-mintss/param))))]
+         [mpitss (transpose/absolute (scale/param) (scale-range-min-max-pair/param) (start-pitch/param) mints)]
+         [norrs  (map (lambda (mpits) (if mpits
+                                         (if (list? mpits)
+                                             (Chord mpits (duration/param) '() #f)
+                                             (Note (car mpits) (cdr mpits) (duration/param) '() #f))
+                                         (Rest (duration/param)))) mpitss)])
     (SplitStaffVoice #;PitchedVoice (instr/param) 'PanCenter norrs)))
 
 ;; same total count as next
-(parameterize ((score-title/param "self-sum-prod-1") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-1"))
+#;(parameterize ((score-title/param "self-sum-prod-1") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-1"))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
 ;; all fours
-(parameterize ((score-title/param "self-sum-prod-2") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-2")
+#;(parameterize ((score-title/param "self-sum-prod-2") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-2")
                                                        (self-same-mintss/param '((0 7 -14 0) (0 1 2 4) (-1 -2 0 -1) (-6 3 -2 3))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
 ;; chords, really boring
-(parameterize ((score-title/param "self-sum-prod-3") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-3")
+#;(parameterize ((score-title/param "self-sum-prod-3") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-3")
                                                        (self-same-mintss/param '((0 2 4 6) (7 5 3 1) (2 1 2 -2 -1 -2) (3 2 3 0 10 ))))
+  (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
+
+;; rests proof of concept
+#;(parameterize ((score-title/param "self-sum-prod-4") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-4")
+                                                       (self-same-mintss/param '((1 0 #f 1) (#f 3 -3 1))))
+  (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
+
+;; chords proof of concept
+(parameterize ((score-title/param "self-sum-prod-5") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-5")
+                                                     (self-same-mintss/param '(((1 6) (0 5) #f (1 3) (3 5) (1 3)) ((1 3) 3 #f (-1 -3) 1 #f))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
+
 
 ;; next: start adding controls
 ;; - Dynamic pianissimo 
