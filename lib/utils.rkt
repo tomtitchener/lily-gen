@@ -40,7 +40,7 @@
   [bin-op-maybe (-> (-> any/c any/c any/c) (-> any/c any/c (or/c #f any/c)))]
   
   ;; take all but last element in list
-  [inits (-> (listof any/c) any/c)]
+  ;; [inits (-> (listof any/c) any/c)]
   ))
 
 (require (only-in algorithms scanl))
@@ -50,6 +50,13 @@
 
 (define relative-weight/c
   (make-flat-contract #:name 'relative-weight/c #:first-order exact-positive-integer?))
+
+;; meander from start interval for count intervals until reaching destination answering list of intervals
+;; by random steps max value determined by difference between start and dest, with forced change in
+;; direction when exceeding dest before count changing course after a run of same-direction steps
+(define/contract (directed-meander count start dest)
+  (-> exact-positive-integer? exact-integer? exact-integer? (non-empty-listof exact-integer?))
+  '())
 
 (define (inits l)
   (if (null? l)

@@ -101,7 +101,7 @@
     [(TupletMaybeIntervalsMotif num denom dur motif)
      (TupletMaybeIntervalsMotif num denom dur (apply-dynamic-to-motif dynamic motif))]
     [(? maybe-intervalss-motif/c maybe-intervalss-motif)
-     (match (car maybe-intervalss-motif)
+     (match (car maybe-intervalss-motif) ;; just to decompose, only option is non-empty-listof ...
        [(list interval-or-intervals controls durations)
         (cons (list interval-or-intervals (cons dynamic controls) durations) (cdr maybe-intervalss-motif))])]))
 

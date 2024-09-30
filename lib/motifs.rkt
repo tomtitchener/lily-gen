@@ -22,10 +22,10 @@
 ;;     then pick randomly using those weights, with goal of keeping output range within limits
 ;;     doesn't work reliably due to randomness, can exceed ranges anyway (see ws/motifs-workspace.rkt)
 ;; - morph-motifs:
-;;     given starting scale, pitch, motif, and general morpher routine to map old scale, pitch,
-;;     and motif and previous ending pitch to new scale, starting pitch, and motif or else #f
-;;     to signal termination, emit list of list of (or/c Note? Rest? Chord? Tuplet?), one per
-;;     iteration
+;;     given starting scale, pitch, maybe-intervals-motif, and general morpher routine to map 
+;;     old scale, pitch, and motif and previous ending pitch to new scale, starting pitch, and 
+;;     motif or else #f to signal termination, emit list of list of (or/c Note? Rest? Chord? Tuplet?), 
+;;     one per iteration
 
 (provide
  ;; - - - - - - - - -
@@ -43,6 +43,7 @@
  weight&maybe-intervalss-motifss/c
  notes-motif-element/c
  notes-motif/c
+ notes-motifs/c
  morph/c
  
  ;; - - - - - - - - -
@@ -139,8 +140,11 @@
 (define notes-motif/c
   (make-flat-contract #:name 'notes-motif/c #:first-order (non-empty-listof notes-motif-element/c)))
 
+(define notes-motifs/c
+  (make-flat-contract #:name 'notes-motifs/c #:first-order (non-empty-listof notes-motif/c)))
+
 ;; a name for a function contract without interface/class overhead
-(define morph/c (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c (non-empty-listof notes-motif/c) (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
+(define morph/c (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c notes-motifs/c (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
 
 (define/contract (maybe-pitch-or-pitches-motif->motif maybe-pitch-or-pitches-motif)
   (-> (list/c maybe-pitch-or-pitches/c (listof control/c) (listof duration?)) (non-empty-listof (or/c Note? Rest? Chord?)))
@@ -406,10 +410,10 @@
 ;;   - accepts previous scale, starting-pitch, motif, maybe-last-pitch, generations
 ;;   - updates scale, starting-pitch, and motif for next generation of notes
 ;;   - list with morphed scale, start-pitch, and motif else #f to stop
-;; * answers successive generations of morphed initial-motif as (non-empty-listof notes-motif/c)
+;; * answers successive generations of morphed initial-motif as notes-motifs/c
 ;;   renderer can annotate generations, swallows motifs
 ;; nb: maybe should be morph-and-render, does it all-in-one
-;; (-> Scale? pitch/c maybe-intervalss-motif/c morph/c (non-empty-listof notes-motif/c))
+;; (-> Scale? pitch/c maybe-intervalss-motif/c morph/c notes-motifs/c)
 (define (morph-motifs initial-scale initial-start-pitch initial-ints-motif morpher)
   (let loop ([scale        initial-scale]
              [start-pitch  initial-start-pitch]
@@ -474,7 +478,7 @@
   (check-equal? (increment-intervals-motif-pan (list (list '() '(PanRight) '()))) (list '() '(PanLeft) '()))
   (check-equal? (increment-intervals-motif-pan (list (list '() '(Accent) '()))) (list '() '(PanLeft Accent) '())))
 
-;; (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c (non-empty-listof notes-motif/c) (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
+;; (-> Scale? pitch/c maybe-intervalss-motif/c maybe-pitch/c notes-motifs/c (or/c #f (list/c Scale? pitch/c maybe-intervalss-motifs/c))))
 (define (increment-pan-morpher scale initial-pitch motif last-pitch notes-motifs)
   (list scale initial-pitch (increment-intervals-motif-pan motif)))
 

@@ -82,11 +82,6 @@
 ;;                                      (10 20) (1 2) -> ((11 21) (12 22) 
 ;;                                                      (10 20) (10 20) -> ((20 30) (30 40)) 
 ;;
-#;(define/contract (self-sum-product as)
-  (-> (non-empty-listof (non-empty-listof exact-integer?)) (non-empty-listof (non-empty-listof (non-empty-listof exact-integer?))))
-  (for*/list ([is as] [js as])
-    (map (lambda (j) (map (lambda (i) ((bin-op-maybe sum-int-or-ints) j i)) is)) js)))
-
 (define/contract (sum-int-or-ints lhs rhs)
   (-> maybe-interval-or-intervals/c maybe-interval-or-intervals/c maybe-interval-or-intervals/c)
   (cond
@@ -108,12 +103,21 @@
   (check-equal? ((bin-op-maybe sum-int-or-ints) 1 (list 1 2)) (list 2 3))
   (check-equal? ((bin-op-maybe sum-int-or-ints) (list 1 2) 2) 3))
 
-;; handle maybe-interval-or-intervals/c vs. just eact-integer? for rests and chords
-;; - (bin-op-maybe +) works for maybe part, but '+' doesn't work for non-empty-list-of interval/c
-(define/contract (self-sum-product as)
-  (-> (non-empty-listof (non-empty-listof maybe-interval-or-intervals/c)) (non-empty-listof (non-empty-listof (non-empty-listof maybe-interval-or-intervals/c))))
-  (for*/list ([is as] [js as])
+(define maybe-interval-or-intervalsss/c
+  (make-flat-contract #:name 'maybe-interval-or-intervalsss/c #:first-order (non-empty-listof maybe-interval-or-intervalss/c)))
+
+;; for*/list does a list comprehension in the sense of
+;; > (for*/list ([is '((1 2 3))] [js '((4 5 6))]) (map (lambda (j) (map (lambda (i) (cons j i)) is)) js))
+;; '((((4 . 1) (4 . 2) (4 . 3)) ((5 . 1) (5 . 2) (5 . 3)) ((6 . 1) (6 . 2) (6 . 3))))
+;; NB: order in (cons j i) so each pitch from *second* list transposes all elements from *first* list, one by one
+(define/contract (sum-product as bs)
+  (-> maybe-interval-or-intervalsss/c maybe-interval-or-intervalsss/c (non-empty-listof maybe-interval-or-intervalsss/c))
+  (for*/list ([is as] [js bs])
     (map (lambda (j) (map (lambda (i) ((bin-op-maybe sum-int-or-ints) j i)) is)) js)))
+
+(define/contract (self-sum-product as)
+  (-> maybe-interval-or-intervalsss/c (non-empty-listof maybe-interval-or-intervalsss/c))
+  (sum-product as as))
 
 (module+ test
   (require rackunit)
@@ -157,12 +161,12 @@
 #;(parameterize ((score-title/param "self-sum-prod-1") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-1"))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
-;; all fours
+;; all fours vs. 4 3 3 6, same total count
 #;(parameterize ((score-title/param "self-sum-prod-2") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-2")
                                                        (self-same-mintss/param '((0 7 -14 0) (0 1 2 4) (-1 -2 0 -1) (-6 3 -2 3))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
-;; chords, really boring
+;; chords are ok, then really boring back-and-forth
 #;(parameterize ((score-title/param "self-sum-prod-3") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-3")
                                                        (self-same-mintss/param '((0 2 4 6) (7 5 3 1) (2 1 2 -2 -1 -2) (3 2 3 0 10 ))))
   (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
@@ -172,17 +176,49 @@
                                                        (self-same-mintss/param '((1 0 #f 1) (#f 3 -3 1))))
   (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
-;; chords proof of concept
-(parameterize ((score-title/param "self-sum-prod-5") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-5")
+;; chords and rests proof of concept
+#;(parameterize ((score-title/param "self-sum-prod-5") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-5")
                                                      (self-same-mintss/param '(((1 6) (0 5) #f (1 3) (3 5) (1 3)) ((1 3) 3 #f (-1 -3) 1 #f))))
     (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
+;; simple components:  in (a b), first 'a' pattern is repeated against itself and against 'b', then 'b' is repeated against 'a' then 'b'
+;;> (self-sum-product '((2 0 2 0) (0 1)))
+;; '(((4 2 4 2) (2 0 2 0) (4 2 4 2) (2 0 2 0))   'a' x 'a'
+;;   ((2 0 2 0) (3 1 3 1))                       'a' x 'b'
+;;   ((2 3) (0 1) (2 3) (0 1))                   'b' x 'a'
+;;   ((0 1) (1 2)))                              'b' x 'b'
+#;(parameterize ((score-title/param "self-sum-prod-6") (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-6")
+                                                     (self-same-mintss/param '((2 0 2 0) (0 1))))
+  (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
+
+;; this works, but doing self-sum in gen-ssprod-voice/param gives sort of arbitrary results:
+;; - a #f when applied against a target gives a list of rests, one for each element in the target
+;; - third and following with just two components split pretty sharply into two parts, not easy to hear relation
+;; - first two work best, with first better than second for coherence
+;; - third shows sudden transition with triples (bar 10) replace quadruples, rest sort of natters on
+;; - fourth demos rests nicely, getting sparse, which may work for brief segments
+;; - fifth demos rests and chords, two-part split though still with ok continuity
+;; - sixth reduces to try to bring forth relationship, but it's a struggle and besides it's really boring
+;; 
+;; best demos are first and fourth, next:
+;; - self product of large mix or short motifs, some with rests, some with chords
+;; - simple product
+
+
+(parameterize ((score-title/param "self-sum-prod-7")
+               (tempo/param (TempoDur 'Q 120)) (file-name/param "self-sum-prod-5")
+               (self-same-mintss/param '(
+                                         ((1 6) (0 5) #f (1 3) (3 5) (1 3))
+                                         ((1 3) 3 #f (-1 -3) 1 #f)
+                                         )
+                                       ))
+    (gen-score-file (score/parameterized (list (gen-ssprod-voice/param)))))
 
 ;; next: start adding controls
 ;; - Dynamic pianissimo 
 ;; - Sempre staccatissimo
 ;; - Pan within voice (may need Lilypond work)
-;;
+;; 
 ;; Uh oh:  pan setting is by staff and SplitVoice like KeyboardVoice has two staffs, "up" and "down"
 ;; so if I do an override, I *only* override the staff with all the notes, and the other staff stays
 ;; with the original pan position

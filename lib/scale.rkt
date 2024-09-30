@@ -47,6 +47,9 @@
  
  ;; maybe-interval-or-intervals is (or/c interval/c (non-empty-listof interval/c) false/c)
  maybe-interval-or-intervals/c
+
+ ;; non-empty-listof maybe-interval-or-intervals/c
+ maybe-interval-or-intervalss/c
  
  ;; - - - - - - - - -
  ;; Utilities
@@ -85,7 +88,7 @@
   [transpose/successive (-> Scale?
                             pitch-range-pair/c
                             pitch/c
-                            (non-empty-listof maybe-interval-or-intervals/c)
+                            maybe-interval-or-intervalss/c
                             (non-empty-listof maybe-pitch-or-pitches/c))]
 
   ;; transpose from the starting pitch using the list of maybe-interval/c to transpose
@@ -94,7 +97,7 @@
   [transpose/absolute (-> Scale?
                           pitch-range-pair/c
                           pitch/c
-                          (non-empty-listof maybe-interval-or-intervals/c)
+                          maybe-interval-or-intervalss/c
                           (non-empty-listof maybe-pitch-or-pitches/c))]
 
   ;; minimum and maximum pitches for a scale
@@ -147,9 +150,13 @@
 (define maybe-intervals/c
   (make-flat-contract #:name 'maybe-intervals/c #:first-order (or/c (non-empty-listof interval/c) false/c)))
 
+
 ;; interval/c => Note, (non-empty-listof interval/c) => Chord, false/c => Rest
 (define maybe-interval-or-intervals/c
   (make-flat-contract #:name 'maybe-interval-or-intervals/c #:first-order (or/c interval/c (non-empty-listof interval/c) false/c)))
+
+(define maybe-interval-or-intervalss/c
+  (make-flat-contract #:name 'maybe-interval-or-intervalss/c #:first-order (non-empty-listof maybe-interval-or-intervals/c)))
 
 (define/contract (pitch-class-list-idx pitch-class-syms pitch-class)
   (-> (non-empty-listof pitch-class?) pitch-class? natural-number/c)
@@ -375,7 +382,8 @@
                                 "cannot find tonic ~v in second or fourth element of fifths-ordering ~v of scale ~v"
                                 tonic fifths-ordered-scale scale)])])
          (values tonic mode)))]))
-      
+
+;;(-> Scale? natural-number/c pitch/c)
 (define (index->pitch scale idx)
   (when (> idx (scale->max-idx scale))
     (error 'index->pitch "idx ~v is > max ~v for scale ~v\n" idx (scale->max-idx scale) scale))
@@ -426,6 +434,13 @@
   (and (pitch-range-pair-pitches-are-scale-members? scale pitch-range-pair)
        (pitch-is-scale-member? scale pitch)))
 
+;; TBD: raw transpose without ranges, only errors if
+;; - pitch isn't in scale
+;; - sum of pitch index and interval is negative
+(define/contract (xp scale pitch interval)
+  (-> Scale? pitch/c interval/c pitch/c)
+  (index->pitch scale (+ (pitch->index scale pitch) interval)))
+
 ;; (-> Scale? pitch-range-pair/c pitch/c exact-integer? maybe-pitch/c)
 (define (xpose scale pitch-range-pair pitch interval)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
@@ -434,20 +449,31 @@
 
 ;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
+;; inputs #f, interval, list of intervals for maybe-interval-or-intervals
+;; 1) #f input => #f output always interpreted as a Rest
+;; 2) interval input => pitch output or #f when pitch exceeds absolute or relative ranges
+;; 3) list of intervals input => list of pitch output or #f when pitch exceeds absolute or relative ranges
+;; TBD: #f does not distinguish between requested rest vs. error when transpostion exceeds range
 (define/contract (transpose/unguarded scale pitch pitch-range-pair maybe-interval-or-intervals)
   (-> Scale? pitch/c pitch-range-pair/c maybe-interval-or-intervals/c maybe-pitch-or-pitches/c)
   (cond
     [(not maybe-interval-or-intervals)
-     #f]
+     #f] ;; input is #f so output is #f and interpreted as a rest
     [(list? maybe-interval-or-intervals)
+     ;; input is list of intervals so output is chord 
      (map (curry transpose/unguarded scale pitch pitch-range-pair) maybe-interval-or-intervals)]
     [else
+     ;; input is single interval
      (let* ([pitch-idx (pitch->index scale pitch)]
             [pitch-off (+ pitch-idx maybe-interval-or-intervals)])
        (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
-           #f
+           ;; #f TBD: #f for out-of-range pitch will be handled as rest, should this be an error instead?
+           (error 'transpose/unguarded "transposition ~v for pitch idx ~v to ~v exceeds max range" maybe-interval-or-intervals pitch-idx pitch-off)
            (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval-or-intervals))])
-             (pitch-in-range? pitch-range-pair xposed-pitch))))]))
+             ;; TBD: if range check for input fails, #f  will be handled as rest, should this be error?
+             (if (pitch-in-range? pitch-range-pair xposed-pitch)
+                 xposed-pitch
+                 (error 'transpose/unguarded "transposed pitch ~v failed range check ~v" xposed-pitch pitch-range-pair)))))]))
 
 ;; converts list of successive intervals into absolute intervals
 ;; LHS  RHS

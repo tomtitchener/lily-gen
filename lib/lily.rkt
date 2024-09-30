@@ -229,7 +229,7 @@
     @string-append{
     \new Voice
     {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)" @(pan->lily pan)
-          @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily events)))) \bar "|."
+          @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map voice-event->lily events))))) \bar "|."
     }
     }))
 
@@ -247,7 +247,7 @@
     \new Staff = "rh" {
     @(pan->lily pan)
     \new Voice {                       
-    @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (map voice-event->lily treble)))) \bar "|."
+    @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map voice-event->lily treble))))) \bar "|."
     }
     }
     \new Staff = "lh" {
@@ -273,13 +273,13 @@
     \new Staff = "up" {
     @(pan->lily pan)
     \new Voice {                       
-    \clef treble \autoChange c { @(tempo->lily tempo) @(time-signature->lily time-signature) @(string-join (map voice-event->lily events))))) } \bar "|."
+    \clef treble \autoChange c' { @(tempo->lily tempo) @(time-signature->lily time-signature) @(pan->markup pan) @(string-join (map voice-event->lily events)) } \bar "|."
     }
     }
     \new Staff = "down" {
     @(pan->lily pan)
     \new Voice {                       
-    \clef bass \autoChange c { @(time-signature->lily time-signature) } | \bar "|."
+    \clef bass \autoChange c' { @(time-signature->lily time-signature) } | \bar "|."
     }
     }
     >>
