@@ -8,6 +8,7 @@
 (require lily-gen/lib/motifs)
 (require lily-gen/lib/score)
 (require lily-gen/lib/scale)
+(require lily-gen/lib/pan-utils)
 
 (define pitch&offset-list/c
   (make-flat-contract #:name 'pitch&offset-list/c #:first-order (list/c pitch/c exact-nonnegative-integer?)))
@@ -72,42 +73,6 @@
 ;;   (parameterize ((time-signature/param (TimeSignatureSimple 4 'Q)) (tempo/param (TempoDur 'Q 120))) (gen-score-file (score/parameterized (render-osc-voices))))
 ;; or, if I want, I can push ex-mot into a parameter itself
 
-;; spread-pans:
-;; given a) count of voices, b) list of 9 fixed pan values (pan-syms):
-;; - generate a list of pan values, one each per count of voices
-;;   with pan values spread evenly from first to last voice up to 9 voices
-;;   e.g. given voice count of:
-;;   - 1 -> PanCenter 
-;;   - 2 -> PanQuarterLeft, PanQuarterRight
-;;   - 3 -> PanEighthLeft, PanCenter, PanThreeEightsRight
-;;   - 4 -> PanEighthLeft, PanThreeEightsLeft, PanEighthRight, PanThreeEightsRight
-;;   - 5 -> PanLeft, PanQuarterLeft, PanCenter, PanQuarterRight, PanRight
-;;   - 6 -> PanLeft, PanEightheft, PanThreeEightsLeft, PanEighthRight, PanThreeEightsRight, PanRight
-;;   - 7 -> PanLeft, PanEightheft, PanThreeEightsLeft, PanCenter, PanEighthRight, PanThreeEightsRight, PanRight
-;;   - 8 -> PanLeft, PanEighthLeft, PanQuarterLeft, PanThreeEightsLeft, PanEighthRight, PanQuarterRight, PanThreeEightsRight, PanRight
-;;   - 9 -> verbatim
-
-(define pan-distributions
-  '((PanCenter)
-    (PanQuarterLeft PanQuarterRight)
-    (PanEighthLeft PanCenter PanThreeEighthsRight)
-    (PanEighthLeft PanThreeEighthsLeft PanEighthRight PanThreeEighthsRight)
-    (PanLeft PanQuarterLeft PanCenter PanQuarterRight PanRight)
-    (PanLeft PanEightheft PanThreeEighthsLeft PanEighthRight PanThreeEighthsRight PanRight)
-    (PanLeft PanEightheft PanThreeEighthsLeft PanCenter PanEighthRight PanThreeEighthsRight PanRight)
-    (PanLeft PanEighthLeft PanQuarterLeft PanThreeEighthsLeft PanEighthRight PanQuarterRight PanThreeEighthsRight PanRight)
-    pan-syms))
-
-(define pan-distrib-hash (make-hash (map cons (range 1 10) pan-distributions)))
-
-(define (voice-cnt->pan-distrib cnt) (hash-ref pan-distrib-hash cnt))
-
-(define/contract (gen-pans-for-voices cnt-voices)
-  (-> exact-nonnegative-integer? (non-empty-listof pan?))
-  (when (> cnt-voices (length pan-syms))
-    (error 'gen-pans-for-voices "cnt-voices: ~v exceeds length pan-syms: ~v" cnt-voices (length pan-syms)))
-  (voice-cnt->pan-distrib cnt-voices))
-
 (define mot/param (make-parameter (list (list 1 '() (list 'E)) (list 1 '() (list 'E)) (list 1 '() (list 'E)))))
 
 (define (make-morph-maybe-intervalls-motif scale maybe-intervalss-motif index)
@@ -121,7 +86,7 @@
  (let* ([morpher (make-morph-maybe-intervalls-motif C-major (mot/param) 0)]
         [voice-eventss (morph-rotated-canons (list (cons 'C '0va) (cons 'C '8vb) (cons 'C '15va)) morpher)]
         [voice-pans (voice-cnt->pan-distrib (length voice-eventss))]
-        [voices (for/list ([voice-events voice-eventss]
-                           [voice-pan    voice-pans])
+        [voices (for/list ([voice-pan    voice-pans]
+                           [voice-events voice-eventss])
                   (SplitStaffVoice 'AcousticGrand voice-pan voice-events))])
    (score/parameterized voices)))
