@@ -170,6 +170,8 @@
     PanThreeEighthsRight
     PanRight))
 
+;; consider eigher symbol as above or real between -1.0 and 1.0
+;; then could easily spread N voices equally
 (define (pan? s) (and (symbol? s) (member s pan-syms)))
 
 (define instr-syms
