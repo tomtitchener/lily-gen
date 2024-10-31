@@ -35,7 +35,6 @@
 |#
 
 ;; morpher callback
-
 (define morph-maybe-intervalss-motif/c (-> pitch/c notes-motif/c))
 
 ;; start-pitches tells number of voices, start-pitch for each
@@ -50,13 +49,13 @@
   (require rackunit)
   ;; closure captures initial state, possible to mutate all index-by-index, just index for now
   ;; for arbitrary (not-per-index) control, have first arg to morph-maybe-intervalss-motif/c be a list
-  (define (make-morph-maybe-intervalls-motif scale maybe-intervalss-motif index)
+  (define (make-list-morph-maybe-intervalls-motif scale maybe-intervalss-motif index)
     (lambda (start-pitch)
       (let* ([notes-motif (second (render-maybe-intervalss-motifs scale start-pitch maybe-intervalss-motif))]
              [morphed-notes-motif (rotate-list-by notes-motif index)])
         (set! index (add1 index))
         morphed-notes-motif)))
-  (let ([morpher (make-morph-maybe-intervalls-motif C-major ex-mot 0)])
+  (let ([morpher (make-list-morph-maybe-intervalls-motif C-major ex-mot 0)])
     (check-equal? (morph-rotated-canons (list (cons 'C '0va) (cons 'C '8vb) (cons 'C '15va)) morpher)
                   (list
                    (list (Note 'D '0va 'E '() #f) (Note 'E '0va 'E '() #f) (Note 'F '0va 'E '() #f))
@@ -141,8 +140,8 @@
 
 ;; nb:  maybe-intervalss-motif/c, so this would be low-level handler for higher-level
 ;;      routine maybe-intervalss-motifs/c that extracted maybe-intervalss-motif/c 
-(define/contract (rotate-motif-forward-by-duration motif dur)
-  (->  maybe-intervalss-motif/c duration? (list/c maybe-intervalss-motif/c boolean?))
+(define/contract (rotate-motif-forward-by-duration motif durs)
+  (->  maybe-intervalss-motif/c (listof duration?) (list/c maybe-intervalss-motif/c boolean?))
   ;; until zero? durval, pull next element off head, put on tail, and recur with remaining durval
   (define (rotate-motif-forward-by-durval motif remaining-durval split-note-flag)
     (let* ([first-motif (car motif)]
@@ -166,20 +165,35 @@
         ;; append first element and recur with difference in durvals
         [else
          (rotate-motif-forward-by-durval (rotate-list-by motif 1) (- remaining-durval first-durval) split-note-flag)])))
-  (rotate-motif-forward-by-durval motif (duration->int dur) #f))
+  (rotate-motif-forward-by-durval motif (apply + (map duration->int durs)) #f))
 
 (module+ test
-  (check-equal? (rotate-motif-forward-by-duration '((0 () (Q)) (#f () (E))) 'S)
+  (check-equal? (rotate-motif-forward-by-duration '((0 () (Q)) (#f () (E))) '(S))
                 '(((0 () (E.)) (#f () (E)) (0 () (S))) #t))
-  (check-equal? (rotate-motif-forward-by-duration '(((0 2) () (Q)) (#f () (E))) 'S)
+  (check-equal? (rotate-motif-forward-by-duration '(((0 2) () (Q)) (#f () (E))) '(S))
                 '((((0 2) () (E.)) (#f () (E)) ((0 2) () (S))) #t))
-  (check-equal? (rotate-motif-forward-by-duration '((#f () (Q)) (#f () (E))) 'S)
+  (check-equal? (rotate-motif-forward-by-duration '((#f () (Q)) (#f () (E))) '(S))
                 '(((#f () (E.)) (#f () (E)) (#f () (S))) #f))
-  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (E))) 'S)
+  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (E))) '(S))
                 '((((0 2) () (Q)) (#f () (E)) ((1 3) () (S))) #f))
-  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (E))) 'E)
+  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (E))) '(E))
                 '((((0 2) () (E.)) (#f () (E)) ((1 3) () (S)) ((0 2) () (S))) #t))
-  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (Q))) 'Q.)
+  (check-equal? (rotate-motif-forward-by-duration '(((1 3) () (S)) ((0 2) () (Q)) (#f () (Q))) '(Q.))
                 '(((#f () (E.)) ((1 3) () (S)) ((0 2) () (Q)) (#f () (S))) #f))
 )
 
+(module+ test
+  ;; need something other tghat 1 1 1 for intervals or else rotating intervals list makes no difference
+  (define ex-mot-2 (list (list 1 '() (list 'E)) (list 2 '() (list 'E)) (list 3 '() (list 'E))))
+  (define (make-dur-morph-maybe-intervalls-motif scale maybe-intervalss-motif index)
+    (lambda (start-pitch)
+      (let* ([morphed-intervalss-motif (first (rotate-motif-forward-by-duration maybe-intervalss-motif (make-list index 'Q)))]
+             [notes-motif (second (render-maybe-intervalss-motifs scale start-pitch morphed-intervalss-motif))])
+        (set! index (add1 index))
+        notes-motif)))
+  (let ([morpher (make-dur-morph-maybe-intervalls-motif C-major ex-mot-2 0)])
+    (check-equal? (morph-rotated-canons (list (cons 'C '0va) (cons 'C '8vb) (cons 'C '15va)) morpher)
+                  (list
+                   (list (Note 'D '0va 'E '() #f) (Note 'F '0va 'E '() #f) (Note 'B '0va 'E '() #f))        ;; 1 2 3
+                   (list (Note 'F '8vb 'E '() #f) (Note 'G '8vb 'E '() #f) (Note 'B '8vb 'E '() #f))        ;; 3 1 2
+                   (list (Note 'E '15va 'E '() #f) (Note 'A '15va 'E '() #f) (Note 'B '15va 'E '() #f)))))) ;; 2 3 1
