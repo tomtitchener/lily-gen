@@ -450,29 +450,30 @@
 ;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
 ;; inputs #f, interval, list of intervals for maybe-interval-or-intervals
-;; 1) #f input => #f output always interpreted as a Rest
-;; 2) interval input => pitch output or #f when pitch exceeds absolute or relative ranges
-;; 3) list of intervals input => list of pitch output or #f when pitch exceeds absolute or relative ranges
-;; TBD: #f does not distinguish between requested rest vs. error when transpostion exceeds range
 (define/contract (transpose/unguarded scale pitch pitch-range-pair maybe-interval-or-intervals)
   (-> Scale? pitch/c pitch-range-pair/c maybe-interval-or-intervals/c maybe-pitch-or-pitches/c)
-  (cond
-    [(not maybe-interval-or-intervals)
-     #f] ;; input is #f so output is #f and interpreted as a rest
-    [(list? maybe-interval-or-intervals)
-     ;; input is list of intervals so output is chord 
-     (map (curry transpose/unguarded scale pitch pitch-range-pair) maybe-interval-or-intervals)]
-    [else
-     ;; input is single interval
+  #;(printf "transpose/unguarded pitch ~v maybe-interval-or-intervals ~v\n" pitch maybe-interval-or-intervals)
+  (match maybe-interval-or-intervals
+    [#f ;; input is #f so output #f is interpreted as a rest
+     #;(printf "#f\n")
+     #f] 
+    [(cons first-interval rest-intervals) ;; input is chord, xpose root, then rest of chord from root
+     (let* ([root (transpose/unguarded scale pitch pitch-range-pair first-interval)]
+            [chord (cons root (map (curry transpose/unguarded scale root pitch-range-pair) rest-intervals))])
+       #;(printf "first-interval: ~v rest-intervals: ~v\n" first-interval rest-intervals)
+       #;(printf "root: ~v chord: ~v\n" root chord)
+       chord)]
+    [(var maybe-interval) ;; input is single interval
      (let* ([pitch-idx (pitch->index scale pitch)]
-            [pitch-off (+ pitch-idx maybe-interval-or-intervals)])
+            [pitch-off (+ pitch-idx maybe-interval)])
        (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
-           ;; #f TBD: #f for out-of-range pitch will be handled as rest, should this be an error instead?
-           (error 'transpose/unguarded "transposition ~v for pitch idx ~v to ~v exceeds max range" maybe-interval-or-intervals pitch-idx pitch-off)
-           (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval-or-intervals))])
-             ;; TBD: if range check for input fails, #f  will be handled as rest, should this be error?
+           (error 'transpose/unguarded "transposition ~v for pitch idx ~v to ~v exceeds max range" maybe-interval pitch-idx pitch-off)
+           (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval))])
              (if (pitch-in-range? pitch-range-pair xposed-pitch)
-                 xposed-pitch
+                 (begin
+                   #;(printf "single interval ~v tranposed ~v\n" maybe-interval xposed-pitch)
+                   xposed-pitch
+                   )
                  (error 'transpose/unguarded "transposed pitch ~v failed range check ~v" xposed-pitch pitch-range-pair)))))]))
 
 ;; converts list of successive intervals into absolute intervals
@@ -481,19 +482,22 @@
 ;; list item => take first element from LHS and sum with item on RHS
 ;; item list => sum itm from LHS against all elementson RHS
 ;; item item => sum two items as ordinary +
-;; NB: something about scanl gets the args so rhs is first, lhs is second
-(define (list-sum rhs lhs)
+(define (list-sum lhs rhs)
   (cond
     [(or (not lhs) (not rhs)) ;; redundant when op for carry-op-maybe
+     #;(printf "list-sum #f #f  ~v ~v => #f\n" rhs lhs)
      #f]
     [(and (list? lhs) (list? rhs))
-     (let ([l (first lhs)])
-       (map (curry + l) rhs))]
+     #;(printf "list-sum #t #t ~v ~v => ~v\n" rhs lhs (cons (+ (first lhs) (car rhs)) (cdr rhs)))
+     (cons (+ (first lhs) (car rhs)) (cdr rhs))]
     [(and (list? lhs) (not (list? rhs)))
-     (+ (first lhs) rhs)]
+     #;(printf "list-sum #t #f ~v ~v => ~v\n" rhs lhs (+ (car lhs) rhs))
+     (+ (car lhs) rhs)]
     [(and (not (list? lhs)) (list? rhs))
-     (map (curry + lhs) rhs)]
+     #;(printf "list-sum #f #t ~v ~v => ~v\n" rhs lhs (cons (+ lhs (car rhs)) (cdr rhs)))
+     (cons (+ lhs (car rhs)) (cdr rhs))]
     [else
+     #;(printf "list-sum else ~v ~v => ~v\n" rhs lhs (+ lhs rhs))
      (+ lhs rhs)]))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (non-empty-listof maybe-interval-or-intervals/c) (non-empty-listof maybe-pitch-or-pitches/c))]
