@@ -294,6 +294,21 @@
         [(SplitStaffVoice? voice) (splitstaff-voice->lily tempo time-signature voice)]
         [else (error "voice->lily unexpected voice")]))
 
+(define/contract (split-staff->pitched-voice voice)
+  (-> voice/c voice/c)
+  (cond [(PitchedVoice?    voice) voice]
+        [(KeyboardVoice?   voice) voice]
+        [(SplitStaffVoice? voice) (PitchedVoice (SplitStaffVoice-instr voice)
+                                                (SplitStaffVoice-pan-position voice)
+                                                (SplitStaffVoice-voiceevents voice))]
+        [else (error "split-staff->pitched-voice unexpected voice ~v" voice)]))
+
+(define/contract (voices-group->midi-voices-group voices-group)
+  (-> VoicesGroup? VoicesGroup?)
+  (VoicesGroup (VoicesGroup-tempo voices-group)
+               (VoicesGroup-time-signature voices-group)
+               (map split-staff->pitched-voice (VoicesGroup-voices voices-group))))
+
 (define/contract (voice-group->lily voice-group)
   (-> VoicesGroup? string?)
   (let ([tempo          (VoicesGroup-tempo          voice-group)]
@@ -313,13 +328,18 @@
     \include "articulate.ly"
     \version "@lilypond-version"
     \header { title = "@title" copyright = "@copyright" }
-    structure = {
+    layout-structure = {
     <<
     @(string-join (map voice-group->lily voice-groups))
     >>
     }
-    \score { \removeWithTag #'midi \structure \layout { \context { \Voice \remove "Note_heads_engraver" \consists "Completion_heads_engraver" \remove "Rest_engraver" \consists "Completion_rest_engraver" } } }
-    \score { \unfoldRepeats \articulate \keepWithTag #'midi \structure \midi {  } }
+    midi-structure = {
+    <<
+    @(string-join (map voice-group->lily (map voices-group->midi-voices-group voice-groups)))
+    >>
+    }
+    \score { \removeWithTag #'midi \layout-structure \layout { \context { \Voice \remove "Note_heads_engraver" \consists "Completion_heads_engraver" \remove "Rest_engraver" \consists "Completion_rest_engraver" } } }
+    \score { \unfoldRepeats \articulate \keepWithTag #'midi \midi-structure \midi {  } }
     }
     ))
 

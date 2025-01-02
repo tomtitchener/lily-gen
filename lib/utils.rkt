@@ -11,6 +11,21 @@
   ;; or negative value e.g. '(1 2 3) 1 -> '(2 3 1)
   [rotate-list-by (-> list? exact-integer? list?)]
 
+  ;; take an existing list--here a notes-motif--and chop it
+  ;; into a series of segments:
+  ;; - repeat-length: how far to advance to the next segment
+  ;; - segment-length: how much to take for each segment
+  ;; idempotent when both lengths are the same:
+  ;; > (repeat-segments 1 1 '(1 2 3))
+  ;;   '(1 2 3)
+  ;; when segment > repeat, then overlapping segments:
+  ;; > (repeat-segments 1 3 '(1 2 3 4 5))
+  ;;   '(1 2 3 2 3 4 3 4 5 4 5)
+  ;; when segment < repeat, then skipping segments:
+  ;; > (repeat-segments 3 2 '(1 2 3 4 5 6 7 8))
+  ;;   '(1 2 4 5 7 8)
+  [repeat-segments (-> exact-positive-integer? exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c))]
+
   ;; answer a thunk that accumulates successive any/c
   ;; converted into a natural until total is >= target
   ;; e.g. to take up to 10 items from a list,
@@ -71,6 +86,28 @@
     (if (< cnt 0)
         (append (drop lst (- l c)) (take lst (- l c)))
         (append (drop lst c) (take lst c)))))
+
+;; take an existing list--here a notes-motif--and chop it
+;; into a series of segments:
+;; - repeat-length: how far to advance to the next segment
+;; - segment-length: how much to take for each segment
+;; idempotent when both lengths are the same:
+;; > (repeat-segments 1 1 '(1 2 3))
+;;   '(1 2 3)
+;; when segment > repeat, then overlapping segments:
+;; > (repeat-segments 1 3 '(1 2 3 4 5))
+;;   '(1 2 3 2 3 4 3 4 5 4 5)
+;; when segment < repeat, then skipping segments:
+;; > (repeat-segments 3 2 '(1 2 3 4 5 6 7 8))
+;;   '(1 2 4 5 7 8)
+;; (-> exact-positive-integer? exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c))
+(define (repeat-segments repeat-length segment-length intervals)
+  (flatten
+   (let loop ([ints intervals])
+     (let ([ints-len (length ints)])
+       (if (> segment-length (length ints))
+           ints
+           (cons (take ints (min ints-len segment-length)) (loop (drop ints (min ints-len repeat-length)))))))))
 
 ;;generators.rkt> (ez-weighted-random-list-element '(1 1 1))
 ;; '(1/3 1/3 1/3)

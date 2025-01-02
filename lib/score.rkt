@@ -87,6 +87,7 @@
 
 (struct Chord (pitches dur controls tie) #:guard chord-ctor-guard #:transparent)
 
+;; a tuplet may not contain another tuplet
 (define tuplet-note/c
   (make-flat-contract #:name 'tuplet-note/c #:first-order (or/c Note? Rest? Chord?)))
 
@@ -201,7 +202,7 @@
                [nextdur (int->duration nextval)])
           (inner (- tot nextval) (cons nextdur ret))))))
 
-;; (-> voice-event/c natural-number/c)
+;; (-> voice-event/c natural-number/c)(
 (define (voice-event->duration-int voice-event)
   (match voice-event
     [(Note _ _ dur _ _)  (duration->int dur)]

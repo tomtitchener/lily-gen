@@ -187,6 +187,7 @@
        (let* ([maybe-pitch-or-pitchess (transpose/successive scale max-pitch-range-pair begin-pitch maybe-intervalss)]
               [maybe-pitch             (maybe-pitch-or-pitches->maybe-pitch (last maybe-pitch-or-pitchess))]
               [motifss                 (foldr accum-motifs '() (sequence->list (zip maybe-pitch-or-pitchess controlss durationss)))])
+         #;(printf "(sequence->list (zip maybe-pitch-or-pitchess controlss durationss)): ~v\n" (sequence->list (zip maybe-pitch-or-pitchess controlss durationss)))
          (list maybe-pitch (flatten motifss)))])))
 
 ;; (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c notes-motif/c))

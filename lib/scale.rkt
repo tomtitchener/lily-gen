@@ -39,6 +39,9 @@
  ;; interval is exact-integer? for positive and negative
  interval/c
 
+ ;; non-empty-listof interval/c
+ intervals/c
+
  ;; maybe-interval is (or/c interval/c false/c)
  maybe-interval/c
  
@@ -143,6 +146,9 @@
 
 (define interval/c
   (make-flat-contract #:name 'interval/c #:first-order exact-integer?))
+
+(define intervals/c
+  (make-flat-contract #:name 'intervals/c #:first-order (non-empty-listof interval/c)))
 
 (define maybe-interval/c
   (make-flat-contract #:name 'maybe-interval/c #:first-order (or/c interval/c false/c)))
@@ -482,7 +488,8 @@
 ;; list item => take first element from LHS and sum with item on RHS
 ;; item list => sum itm from LHS against all elementson RHS
 ;; item item => sum two items as ordinary +
-(define (list-sum lhs rhs)
+(define (list-sum rhs lhs)
+  #;(printf "list-sum lhs: ~v rhs: ~v\n" lhs rhs)
   (cond
     [(or (not lhs) (not rhs)) ;; redundant when op for carry-op-maybe
      #;(printf "list-sum #f #f  ~v ~v => #f\n" rhs lhs)
@@ -493,12 +500,19 @@
     [(and (list? lhs) (not (list? rhs)))
      #;(printf "list-sum #t #f ~v ~v => ~v\n" rhs lhs (+ (car lhs) rhs))
      (+ (car lhs) rhs)]
+    ;;;
     [(and (not (list? lhs)) (list? rhs))
      #;(printf "list-sum #f #t ~v ~v => ~v\n" rhs lhs (cons (+ lhs (car rhs)) (cdr rhs)))
      (cons (+ lhs (car rhs)) (cdr rhs))]
     [else
      #;(printf "list-sum else ~v ~v => ~v\n" rhs lhs (+ lhs rhs))
      (+ lhs rhs)]))
+
+;; bug: only transposes chord when *first* element in maybe-interval-or-intervalss is a list
+;;      and then it repeats that chord with each successive transposition
+;;      forgets chords inside of list
+;; correct behavior is to take starting pitch and apply each of maybe-interval-or-intervalss
+;; but (scanl (carry-op-maybe list-sum) maybe-interval-or-intervalss) swallows 
 
 ;; (-> Scale? pitch-range-pair/c pitch/c (non-empty-listof maybe-interval-or-intervals/c) (non-empty-listof maybe-pitch-or-pitches/c))]
 (define (transpose/successive scale pitch-range-pair pitch maybe-interval-or-intervalss)
