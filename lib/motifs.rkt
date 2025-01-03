@@ -63,9 +63,29 @@
   [morph-motifs
    (-> Scale? pitch/c maybe-intervalss-motif/c morph/c (non-empty-listof notes-motif/c))]
 
-  ;; increment with wrap of pan for current motif, init to left
+  ;; answer morpher that increments with wrap of pan for current motif, init to left
   [increment-pan-morpher
    morph/c]
+
+  ;; for on/off controls:  Sustain, Slur, Sostenuto
+  ;; e.g.: (mod-all notes-motif 'SustainOn 'SustainOff)
+  [mod-all 
+   (-> notes-motif/c (-> symbol? boolean?) symbol? symbol? notes-motif/c)]
+
+  [sustain-all
+   (-> notes-motif/c notes-motif/c)]
+
+  ;; use scale, start pitch, and list of intervals to transpose
+  ;; each element in maybe-intervalss-motifs rendered as a notes-motif
+  [transpose-maybe-intervalss-motif-by-start-pitches
+   (-> Scale? pitch/c intervals/c maybe-intervalss-motifs/c notes-motif/c)]
+
+  ;; group the list of notes-motif elements by tied notes, e.g. a note
+  ;; that is *not* tied becomes a single-item list and notes that *are*
+  ;; tied become multiple-item lists, then call rotate-list-by & flatten
+  [rotate-notes-motif-by
+    (-> notes-motif/c exact-integer? notes-motif/c)]
+  
  ))
 
 (require racket/generator)
@@ -455,11 +475,13 @@
                               (Note 'D '8va 'Q '() #f)
                               (Note 'F '8va 'Q '() #f))))))
 
+;; Use these to spread list of voices across pan settings equally
 
 (define (increment-pan pan)
   (let ([pan-idx (index-of pan-syms pan)])
     (list-ref pan-syms (modulo (add1 pan-idx) (length pan-syms)))))
 
+;; bug: assumes pan is always first in list of controls
 (define (increment-or-mod-pan ctrls)
   (match ctrls
     ['() (list 'PanLeft)]
@@ -483,3 +505,195 @@
 (define (increment-pan-morpher scale initial-pitch motif last-pitch notes-motifs)
   (list scale initial-pitch (increment-intervals-motif-pan motif)))
 
+;; (-> Scale? pitch/c intervals/c maybe-intervalss-motifs/c notes-motif/c)
+(define/contract (transpose-maybe-intervalss-motif-by-start-pitches scale start-pitch steps maybe-intervalss-motif)
+  (-> Scale? pitch/c intervals/c maybe-intervalss-motifs/c notes-motif/c)
+  (let ([start-pitches (cons start-pitch (transpose/successive scale (scale->pitch-range-pair scale) start-pitch steps))])
+    (flatten (for/list ([inner-start-pitch start-pitches])
+               (second (render-maybe-intervalss-motifs scale inner-start-pitch maybe-intervalss-motif))))))
+
+(define/contract (list-swap v l p)
+  (-> any/c list? (-> any/c any/c) list?)
+  (match (index-where l p)
+    [#f (cons v l)]
+    [i (list-set l i v)]))
+
+(define/contract (add-ctrl-to-notes-motif-element elem ctrl? ctrl)
+  (-> notes-motif-element/c (-> control/c boolean?) control/c notes-motif-element/c)
+  (match elem
+    [(Note pc oct dur ctrls tie)
+     (Note pc oct dur (list-swap ctrl ctrls ctrl?) tie)]
+    [(Rest dur)
+     (Rest dur)]
+    [(Chord pitches dur ctrls tie)
+     (Chord pitches dur (list-swap ctrl ctrls ctrl?) tie)]
+    [(Tuplet num denom dur notes)
+     (Tuplet num denom dur (cons (add-ctrl-to-notes-motif-element (car notes) ctrl ctrl?) (cdr notes)))]))
+
+;; (-> notes-motif/c symbol? symbol? notes-motif/c)
+(define (mod-all notes-motif ctrl? on off)
+  (when (or (null? notes-motif) (= 1 (length notes-motif)))
+    (error 'mod-all "invalid length for notes-motif: ~v" notes-motif))
+  (let*-values ([(start  rest) (split-at notes-motif 1)]
+                [(middle last) (split-at rest (- (length rest) 1))])
+    (append (cons (add-ctrl-to-notes-motif-element (car start) ctrl? on) middle)
+            (list (add-ctrl-to-notes-motif-element (car last) ctrl? off)))))
+
+;;(-> notes-motif/c notes-motif/c)
+(define (sustain-all notes-motif)
+  (mod-all notes-motif sustain? 'SustainOn 'SustainOff))
+
+;; A tuplet is tied if the last tuplet-note/c is tied
+(define/contract (notes-motif-element-has-tie? elem)
+  (-> notes-motif-element/c boolean?)
+  (match elem
+    [(Note _ _ _ _ tie)
+     tie]
+    [(Chord _ _ _ tie)
+     tie]
+    [(Rest _)
+     #f]
+    [(Tuplet _ _ _ notes)
+     (notes-motif-element-has-tie? (last notes))]))
+
+;; copy elements from source to destination until first element that is not a tie
+;; notes-motif/c is non-empty-listof so mot is never empty list
+;; also, last element in mot should never be tied, so recursive call should not fail
+(define (accum-tied-elements mot)
+  (let ([elem (first mot)])
+    (if (notes-motif-element-has-tie? elem)
+        (cons elem (accum-tied-elements (rest mot)))
+        (cons elem '()))))
+
+;; - call accum-tied-elements from head and save result
+;; - answer two-part list with result and original list
+;;   with (length result) dropped from beginning
+(define (split-notes-motif mot)
+  (let ([first (accum-tied-elements mot)])
+    (list first (drop mot (length first)))))
+
+(define (group-notes-motif-by-ties mot)
+  (define (inner m acc)
+    (if (null? m)
+        acc
+        (match (split-notes-motif m)
+          [(cons first-notes last-notes)
+           (inner (car last-notes) (append acc (list first-notes)))])))
+  (inner mot '()))
+
+;; (-> notes-motif/c exact-integer? notes-motif/c)
+(define (rotate-notes-motif-by mot cnt)
+  (flatten (rotate-list-by (group-notes-motif-by-ties mot) cnt)))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (split-notes-motif `(,(Note 'C '8va 'E '() #t)
+                                     ,(Note 'C '8va 'E '() #t)
+                                     ,(Note 'C '8va 'E '() #f)
+                                     ,(Rest 'E) ,(Rest 'E)))
+                (list (list (Note 'C '8va 'E '() #t)
+                            (Note 'C '8va 'E '() #t)
+                            (Note 'C '8va 'E '() #f))
+                      (list (Rest 'E) (Rest 'E))))
+  (check-equal? (first (split-notes-motif `(,(Rest 'E)
+                                            ,(Note 'C '8va 'E '() #t)
+                                            ,(Note 'C '8va 'E '() #t)
+                                            ,(Note 'C '8va 'E '() #f)
+                                            ,(Rest 'E))))
+                (list (Rest 'E)))
+  (check-equal? (second (split-notes-motif `(,(Rest 'E)
+                                             ,(Note 'C '8va 'E '() #t)
+                                             ,(Note 'C '8va 'E '() #t)
+                                             ,(Note 'C '8va 'E '() #f)
+                                             ,(Rest 'E))))
+                (list (Note 'C '8va 'E '() #t)
+                      (Note 'C '8va 'E '() #t)
+                      (Note 'C '8va 'E '() #f)
+                      (Rest 'E)))
+  (let ([mot `(,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Rest 'E))])
+    (check-equal? (rotate-notes-motif-by mot 0)
+                  mot)
+    (check-equal? (rotate-notes-motif-by mot 1)
+                  `(,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)
+                    ,(Rest 'E)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)))
+    (check-equal? (rotate-notes-motif-by mot 2)
+                  `(,(Rest 'E)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)))
+    (check-equal? (rotate-notes-motif-by mot 3) mot))
+  (let ([mot `(,(Tuplet 3 2 'Q (list (Note 'C '8va 'E '() #f) (Note 'D '8va 'E '() #f) (Note 'E '8va 'E '() #f)))
+               ,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Rest 'E))])
+    (check-equal? (rotate-notes-motif-by mot 1)
+                  `(,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)
+                    ,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)
+                    ,(Rest 'E)
+                    ,(Tuplet 3 2 'Q (list (Note 'C '8va 'E '() #f) (Note 'D '8va 'E '() #f) (Note 'E '8va 'E '() #f))))))
+  (let ([mot `(,(Tuplet 3 2 'Q (list (Note 'C '8va 'E '() #f) (Note 'D '8va 'E '() #f) (Note 'E '8va 'E '() #t)))
+               ,(Note 'E '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Note 'C '8va 'E '() #t)
+               ,(Note 'C '8va 'E '() #f)
+               ,(Rest 'E))])
+    (check-equal? (rotate-notes-motif-by mot 1)
+                  `(,(Note 'C '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f)
+                    ,(Rest 'E)
+                    ,(Tuplet 3 2 'Q (list (Note 'C '8va 'E '() #f) (Note 'D '8va 'E '() #f) (Note 'E '8va 'E '() #t)))
+                    ,(Note 'E '8va 'E '() #t)
+                    ,(Note 'C '8va 'E '() #f))))
+  )
+
+;; morpher framework for generating notes-motif/c from
+;; maybe-intervalss-motif/c given list of morph data
+;; that is list of scale, start pitch, and rotate-by value,
+;; rendering first, then rotating second, taking care to
+;; aggregate tied notes for rotation
+
+;; special-purpose and convoluted code, currently not exported
+
+(define gen-morph-maybe-intervalss-motif/c (-> any/c notes-motif/c))
+
+;; just map with contract
+(define/contract (morph-to-motifs morph-data morpher)
+  (-> (non-empty-listof any/c) gen-morph-maybe-intervalss-motif/c notes-motifs/c)
+  (map morpher morph-data))
+
+;; morph data here is list of scale? pitch/c exact-integer?
+;; minimal morph given always render first, morph second
+;; 1) render with scale? and pitch/c for start pitch
+;; 2) rotate with exact-integer?
+(define/contract (make-rotate-maybe-intervalss-motif maybe-intervalss-motif)
+  (-> maybe-intervalss-motif/c (-> any/c notes-motif/c))
+  (lambda (morph-data)
+    (match morph-data
+      [(list scale start-pitch rotate-val)
+       (match (render-maybe-intervalss-motifs scale start-pitch maybe-intervalss-motif)
+         [(list _ notes-motif)
+          (rotate-notes-motif-by notes-motif rotate-val)])])))
+
+(module+ test
+  (define ex-mot (list (list 1 '() (list 'E)) (list 2 '() (list 'E)) (list 3 '() (list 'E))))
+  (require rackunit)
+  (let ([morpher (make-rotate-maybe-intervalss-motif ex-mot)])
+    (check-equal? (morph-to-motifs (list (list C-major (cons 'C '0va) 0) (list C-major (cons 'C '8vb) 1)) morpher)
+                  (list
+                   (list (Note 'D '0va 'E '() #f) (Note 'F '0va 'E '() #f) (Note 'B '0va 'E '() #f))
+                   (list (Note 'F '8vb 'E '() #f) (Note 'B '8vb 'E '() #f) (Note 'D '8vb 'E '() #f))))))
