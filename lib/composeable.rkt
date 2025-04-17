@@ -2,6 +2,8 @@
 
 ;; composeable: methods that compose
 
+;; TBD: seems obsolete.
+
 (require lily-gen/lib/scale)
 (require lily-gen/lib/score)
 
