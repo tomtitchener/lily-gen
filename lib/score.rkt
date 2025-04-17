@@ -93,6 +93,7 @@
 
 ;; the duration for the entire tuplet is the sum of the durations of the notes
 ;; times the numerator divided by the divisor (see voice-event->duration-int)
+;; (-> natural-number/c natural-number/c duration? natural-number/c symbol? void)
 (define (tuplet-ctor-guard-durs num denom tup-dur tup-notes-dur type-name)
   (let ([tot-dur (* (/ tup-notes-dur num) denom)]
         [tup-dur-int (duration->int tup-dur)])

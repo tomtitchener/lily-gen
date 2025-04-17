@@ -18,9 +18,9 @@
   ;; multiply num  and duration->int for first and last elements of pair
   [num-denom-pr->barlen (-> num-denom/c natural-number/c)]
 
-  [ctrls-durs&pit->notes (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Note?))]
+  [ctrls-durs&pit->notes (-> (listof control/c) (non-empty-listof duration?) pitch/c boolean? (listof Note?))]
   
-  [ctrls-durs&pits->chords (-> (listof control/c) (non-empty-listof duration?) (non-empty-listof pitch/c) (listof Chord?))]
+  [ctrls-durs&pits->chords (-> (listof control/c) (non-empty-listof duration?) (non-empty-listof pitch/c) boolean? (listof Chord?))]
 
   [ctrls-durs&mpit->notes-or-rests (-> (listof control/c) (listof duration?) maybe-pitch/c (or/c (listof Note?) (listof Rest?)))]
 
@@ -62,28 +62,29 @@
 (define (num-denom-pr->barlen num-denom-pr)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
 
-;; (-> (listof control/c) (non-empty-listof duration?) pitch/c (listof Note?))
-(define (ctrls-durs&pit->notes controls durations pitch)
+;; create tied notes one for each duration, all except last are tied
+;; (-> (listof control/c) (non-empty-listof duration?) pitch/c boolean? (listof Note?))
+(define (ctrls-durs&pit->notes controls durations pitch tie)
   (let ([pitch-class (car pitch)]
         [octave      (cdr pitch)])
-    (let loop ([durs  durations]
-               [ctrls controls])
+    (let loop ([ctrls controls]
+               [durs  durations])
       (cond [(= 1 (length durs))
-             (list (Note pitch-class octave (car durs) ctrls #f))]
+             (list (Note pitch-class octave (car durs) ctrls tie))]
             [else
              (cons (Note pitch-class octave (car durs) ctrls #t)
-                   (loop (cdr durs) '()))]))))
+                   (loop '() (cdr durs)))]))))
 
 (module+ test
   (require rackunit)
   (check-equal?
-   (ctrls-durs&pit->notes '(Accent) '(E) (cons 'C '0va))
+   (ctrls-durs&pit->notes '(Accent) '(E) (cons 'C '0va) #f)
    (list (Note 'C '0va 'E '(Accent) #f)))
   (check-equal?
-   (ctrls-durs&pit->notes '(Accent) '(E Q) (cons 'C '0va))
+   (ctrls-durs&pit->notes '(Accent) '(E Q) (cons 'C '0va) #f)
    (list (Note 'C '0va 'E '(Accent) #t) (Note 'C '0va 'Q '() #f)))
   (check-equal?
-   (ctrls-durs&pit->notes '(Accent) '(E Q W) (cons 'C '0va))
+   (ctrls-durs&pit->notes '(Accent) '(E Q W) (cons 'C '0va) #f)
    (list (Note 'C '0va 'E '(Accent) #t) (Note 'C '0va 'Q '() #t) (Note 'C '0va 'W '() #f))))
 
 (define (ctrls-durs&mpit->notes-or-rests ctrls durs mpitch)
@@ -91,13 +92,16 @@
     [#f         (map Rest durs)]
     [(cons _ _) (ctrls-durs&pit->notes ctrls durs mpitch)]))
 
+;; create chords one for each duration, all except last are tied
 ;; (-> (listof control/c) (non-empty-listof duration?) (listof pitch/c) (listof Chord?))
-(define (ctrls-durs&pits->chords ctrls durations pitches)
-  (cond [(= 1 (length durations))
-         (list (Chord pitches (car durations) ctrls #f))]
-        [else
-         (cons (Chord pitches (car durations) ctrls #t)
-               (ctrls-durs&pits->chords '() (cdr durations) pitches))]))
+(define (ctrls-durs&pits->chords controls durations pitches tie)
+  (let loop ([ctrls controls]
+             [durs durations])
+    (cond [(= 1 (length durs))
+           (list (Chord pitches (car durs) controls tie))]
+          [else
+           (cons (Chord pitches (car durs) controls #t)
+                 (loop '() (cdr durs)))])))
 
 ;; (-> (listof voice-event/c) clef? (listof voice-event/c))
 (define (add-bass-or-treble-clefs-to-voice-events voice-events starting-clef)

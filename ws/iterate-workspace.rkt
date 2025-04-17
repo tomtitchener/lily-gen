@@ -53,7 +53,7 @@
 ;; NB: for each in mpitches, output is always (length durations)
 (define/contract (durs&mpits->notes-or-rests durations mpitches)
   (-> (listof duration?) (listof maybe-pitch/c) (listof (or/c Note? Rest?)))
-  (flatten (map (curry ctrls-durs&mpit->notes-or-rests '() durations) mpitches)))
+  (flatten (map (curry ctrls-durs&mpit->notes-or-rests '() durations #f) mpitches)))
 
 (define/contract transpose-iterate-voices/parameterized
   (-> (listof voice/c))

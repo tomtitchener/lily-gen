@@ -172,6 +172,7 @@
 ;; clip-voice-events finishes with left-over duration that's shorter the voice-event at that spot
 ;; given the voice-event and the remaining durlen, first convert durlen to a list of durations,
 ;; then map the remaining voice event into one or more events of the same length
+;; always last voice event in piece, so Note or Chord never starts with tie
 (define/contract (replace-voice-event-durlen voice-event durlen)
   (-> voice-event/c natural-number/c (listof voice-event/c))
   (let ([durs (int->durations durlen)])
@@ -239,42 +240,15 @@
          [target-total-durlen   (- min-total-durlen last-bar-spill-over)])
     (map ((curry clip-voice-events-at-total-durlen) target-total-durlen) voices)))
 
-;; spread note-or-chord (except for dur) across all durs with pitch or pitches
-;; from input with:
-;; * ties for all note-or-chord except the last,
-;; * controls only for the first
-;; called when dur for note or chord spans beat or bar divisions
-#;(define/contract (spread-note-or-chord-durations note-or-chord durs)
-  (-> (or/c Note? Chord?) (listof duration?) (or/c (listof Note?) (listof Chord?)))
-  (let ([copy-note-or-chord
-         (lambda (note-or-chord dur controls tie)
-           (match note-or-chord
-             [(Note pitch octave _ _ _)
-              (Note pitch octave dur controls tie)]
-             [(Chord pitches _ _ _)
-              (Chord pitches dur controls tie)]))]
-        [note-or-chord->controls
-         (lambda (note-or-chord)
-           (match note-or-chord
-             [(Note _ _ _ controls _)
-              controls]
-             [(Chord _ _ controls _)
-              controls]))])
-    (cond [(= 1 (length durs))
-           (list (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #f))]
-          [(= 2 (length durs))
-           (cons (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #t)
-                 (list (copy-note-or-chord note-or-chord (cadr durs) '() #f)))]
-          [else
-           (let* ([start    (copy-note-or-chord note-or-chord (car durs) (note-or-chord->controls note-or-chord) #t)]
-                  [mid-durs (take (cdr durs) (- (length (cdr durs)) 1))]
-                  [middle   (map (lambda (dur) (copy-note-or-chord note-or-chord dur '() #t)) mid-durs)]
-                  [end      (copy-note-or-chord note-or-chord (last durs) '() #f)])
-             (cons start (append middle (list end))))])))
-
 (define/contract (adjacent-rests? a b)
   (-> voice-event/c voice-event/c boolean?)
   (and (Rest? a) (Rest? b)))
+
+;; only works for Note + Note or Chord + Chord,
+;; not when a or b is a Tuplet
+;; a is a Note or Chord and has a tie OR
+;; a is a Tuplet and the last event is a
+;; Note or Chord with a tie
 
 (define/contract (adjacent-tied-notes? a b)
   (-> voice-event/c voice-event/c boolean?)
@@ -331,15 +305,15 @@
                 [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
                 [rests  (map Rest durs)])
            (cons (+ curlen addlen) (append ves rests)))]
-        [(Note pitch-class octave dur ctrls _)
+        [(Note pitch-class octave dur ctrls tie) ;; one note in list, not tied by group-by-adjacent-sequences
          (let* ([addlen (duration->int dur)]
                 [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
-                [notes-or-chords (ctrls-durs&pit->notes ctrls durs (cons pitch-class octave))])
+                [notes-or-chords (ctrls-durs&pit->notes ctrls durs (cons pitch-class octave) tie)])
            (cons (+ curlen addlen) (append ves notes-or-chords)))]
-        [(Chord pitches dur ctrls _)
+        [(Chord pitches dur ctrls tie) ;; one chord in list, not tied by group-by-adjacent-sequences
          (let* ([addlen (duration->int dur)]
                 [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
-                [notes-or-chords (ctrls-durs&pits->chords ctrls durs pitches)])
+                [notes-or-chords (ctrls-durs&pits->chords ctrls durs pitches tie)])
            (cons (+ curlen addlen) (append ves notes-or-chords)))]
         [(Tuplet _ _ dur _)
          ;; make sure end of tuplet is before the end of the bar
@@ -351,24 +325,24 @@
                (error 'align-voice-events-durations
                       "tuplet ~v durlen ~v > durlen to end of bar ~v"
                       voice-event tuplet-durlen rem-durlen)
-               (cons (+ curlen tuplet-durlen) (list voice-event))))]
+               (cons (+ curlen tuplet-durlen) (cons ves (list voice-event)))))]
         [(or (Spacer _) (KeySignature _ _) (Sempre _) (? clef?))
          ;; Spacer: treat integrally with durs unchanged
          ;; KeySignature, clef: zero-dur from voice-event->duration-int
          (let ([addlen (voice-event->duration-int voice-event)])
-           (cons (+ curlen addlen) (list voice-event)))])
+           (cons (+ curlen addlen) (cons ves (list voice-event))))])
       ))
   ;; outer fold over grouping of voice-events by Rest, Note, or Chord
   (define (adjvesdurs ve-group pr)
     (let ([curlen (car pr)]
           [ves    (cdr pr)])
       (cond
-        ;; special handling for lists of Rest, Note, and Chord:
+        ;; special handling for lists of Rest, tied Notes, or tied Chords:
         ;; - sum durations then use that to get the list of durations 
         ;;   for the time-signature and sum durations from the start
         ;; - for list of Rest, map Rest to each of durations (no ties)
-        ;; - for list of Note or Chord call spread-note-or-chord-durations
-        ;;   to copy controls and distribute ties
+        ;; - for list of Note or Chord call ctrls-durs&pit->notes or
+        ;;   ctrls-durs&pit->chords to copy controls and distribute ties
         [(and (> (length ve-group) 1) (Rest? (car ve-group)))
          (let* ([addlen (apply + (map voice-event->duration-int ve-group))]
                 [durs   (add-end-durs-for-time-signature time-signature curlen addlen)]
@@ -380,7 +354,8 @@
                 [note   (car ve-group)]
                 [pitch  (cons (Note-pitch note) (Note-octave note))]
                 [ctrls  (Note-controls note)]
-                [notes  (ctrls-durs&pit->notes ctrls durs pitch)])
+                [tie    (Note-tie (last ve-group))]
+                [notes  (ctrls-durs&pit->notes ctrls durs pitch tie)])
            (cons (+ curlen addlen) (append ves notes)))]
         [(and (> (length ve-group) 1) (Chord? (car ve-group)))
          (let* ([addlen  (apply + (map voice-event->duration-int ve-group))]
@@ -404,10 +379,7 @@
   ;; 2) fold over (list (listof voice-event)) distributing durations by position of event relative
   ;     to time-signature
   (let ([ve-groups (group-by-adjacent-sequences adjacent-rests-or-tied-notes-or-chords? voice-events)])
-    (let* ([pr (foldl adjvesdurs (cons 0 '()) ve-groups)]
-           [rets (cdr pr)]
-           [ret (flatten rets)])
-      (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups))))))
+    (flatten (cdr (foldl adjvesdurs (cons 0 '()) ve-groups)))))
 
 ;; (-> time-signature/c voice/c voice/c)
 (define (align-voice-durations time-signature voice)

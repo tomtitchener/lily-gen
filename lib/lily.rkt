@@ -444,12 +444,16 @@
          [score (make-score "exteded & aligned split staff simple pitched and keyboard voices" (list voices-group))])
     (test-score "clipped&aligned-split-staff-simple-pitched-and-keyboard-voices" score))
 
+  (define (ctrls-durs&pit->notes-no-tie controls durations pitch)
+     (ctrls-durs&pit->notes controls durations pitch #f))
+
+  ;; this causes the failure of test
   (let* ([gens                     4]
          [ef-key-signature         (KeySignature 'Ef 'Major)]
          [kernel-intervals         '(0 6 1 2)]
          [kernel-length            (length kernel-intervals)]
          [voices-durationss        (map (compose int->durations (curry expt kernel-length)) (reverse (range 1 (add1 gens))))]
-         [durs&pits->notess        (lambda (durations pitches) (flatten (map (curry ctrls-durs&pit->notes '() durations) pitches)))]
+         [durs&pits->notess        (lambda (durations pitches) (flatten (map (curry ctrls-durs&pit->notes-no-tie '() durations) pitches)))]
          [ef-major-pair            (scale->pitch-range-pair Ef-major)]
          [init-pitch               (cons 'Ef '8vb)]
          [init-intervals           '(3 0 5)]
@@ -462,7 +466,7 @@
          [simple-time-signature    (TimeSignatureSimple 4 'Q)]
          [voices-group             (VoicesGroup simple-tempo simple-time-signature split-staff-voices)]
          [score                    (make-score "selfsim voices" (list voices-group))])
-    (test-score "self-sim-voices" score)))
+      (test-score "self-sim-voices" score)))
 
 ;; Next steps:
 ;; * make routine for quick turnaround that outputs a self-similar score from args:
