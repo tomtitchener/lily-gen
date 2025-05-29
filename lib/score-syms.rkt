@@ -8,6 +8,7 @@
  maybe-pitch-or-pitches/c 
  ;; all are either (listof symbol?) or (-> symbol? boolean?)
  pitch-class-syms
+ pitch-class-2-syms
  pitch-class?
  octave-syms
  octave?
@@ -57,7 +58,36 @@
    As  Bf Cff
    Ass B  Cf))
 
-(define (pitch-class? p) (and (symbol? p) (member p pitch-class-syms)))
+;; h -> quarter up
+;; l -> quarter down
+(define pitch-class-2-syms
+ '(Bs  C   Dff
+   Bsh Ch  Dfl
+   Bss Cs  Df
+   Csh Dl
+   Css D  Eff
+   Dh  Efl
+   Ds  Ef Fff
+   Dsh El Ffl
+   Dss E  Ff
+   Eh  Fl
+   Es  F  Gff
+   Fh  Gfl
+   Ess Fs Gf
+   Fsh Gl
+   Fss G  Aff
+   Gh  Afl
+   Gs  Af
+   Gsh Al
+   Gss A  Bff
+   Ah  Bfl   
+   As  Bf Cff
+   Ash Bl
+   Ass B  Cf
+   Bh  Cl
+   ))
+
+(define (pitch-class? p) (and (symbol? p) (member p pitch-class-2-syms)))
 
 (define octave-syms
  '(29vb

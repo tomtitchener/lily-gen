@@ -23,6 +23,12 @@
  ;; C-anchored chromatic scale with one flat
  chromatic-flats
 
+ ;; C-anchored quarter tone scale ascending
+ quarter-tones-up
+
+ ;; C-anchored quarter tone scale descending
+ quarter-tones-down
+
  ;; C-anchored diatonic scales
  C-whole-tone
  Df-whole-tone 
@@ -190,6 +196,10 @@
 (define chromatic-sharps (Scale '(C Cs D Ds E F Fs G Gs A As B)))
 
 (define chromatic-flats (Scale '(C Df D Ef E F Gf G Af A Bf Cf)))
+
+(define quarter-tones-up (Scale '(C Ch Cs Csh D Dh Ds Dsh E Eh F Fh Fs Fsh G Gh Gs Gsh A Ah As Ash B Bh)))
+
+(define quarter-tones-down (Scale '(C Cl B Bl Bf Bfl A Al Af Afl G Gl Gf Gfl F Fl E El Ef Efl D Dl Df Dfl)))
 
 ;; TBD: generate whole tone scales given tonic
 
@@ -360,12 +370,14 @@
 ;; (-> Scale? (values pitch-class? mode?))
 (define (scale->key-signature-values scale)
   (cond
-    ;; no key signature for any of C-major, whole-tone or chromatic scales
+    ;; no key signature for any of C-major, whole-tone chromatic, or quarter tone scales
     [(or (equal? scale C-major)
          (equal? scale C-whole-tone)
          (equal? scale Df-whole-tone)
          (equal? scale chromatic-sharps)
          (equal? scale chromatic-flats)
+         (equal? scale quarter-tones-up)
+         (equal? scale quarter-tones-down)
          (member (Scale-pitch-classes scale) octatonic-whole-pitch-classes-list set=?)
          (member (Scale-pitch-classes scale) octatonic-half-pitch-classes-list set=?))
      (values 'C 'Major)]
@@ -597,4 +609,5 @@
   
   (check-equal?
    (second (transpose/iterate 3 C-major (scale->pitch-range-pair C-major) (cons 'C '0va) 0 '(0 5 2) '(1 2 3)))
-   '((D . 0va) (E . 0va) (F . 0va) (B . 0va) (C . 8va) (D . 8va) (F . 0va) (G . 0va) (A . 0va))))
+   '((D . 0va) (E . 0va) (F . 0va) (B . 0va) (C . 8va) (D . 8va) (F . 0va) (G . 0va) (A . 0va)))
+  )

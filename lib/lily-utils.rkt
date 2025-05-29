@@ -27,6 +27,7 @@
 
 (require lily-gen/lib/score-syms)
 
+;; enharmonic equivalents by row for easier reading
 (define pitch-lily-strings
   '("bis"   "c"   "deses"
     "bisis" "cis" "des"
@@ -43,8 +44,49 @@
 
 (define sym-pitch-hash (make-hash (map cons pitch-class-syms pitch-lily-strings)))
 
-(define (pitch-class->lily pitch)
+(define (pitch-class-1->lily pitch)
   (hash-ref sym-pitch-hash pitch))
+
+;; rules:
+;;  <>ih   1 quarter up
+;;  <>is   2 quarters up
+;;  <>isih 3 quarters up
+;;
+;;  <>eh   1 quarter down
+;;  <>es   2 quarters down
+;;  <>eseh 3 quarters down
+
+(define pitch-lily-strings-2
+  '("bis"   "c"     "deses"
+    "bisih" "cih"   "deseh"
+    "bisis" "cis"   "des"
+    "cisih" "deh"
+    "cisis" "d"     "eeses"
+    "dih"   "eeseh"
+    "dis"   "ees"   "feses"
+    "disih" "eeh"   "feseh"
+    "disis" "e"     "fes"
+    "eih"   "feh"
+    "eis"   "f"     "geses"
+    "fih"   "geseh"
+    "eisis" "fis"   "ges"
+    "fisih" "geh"
+    "fisis" "g"     "aeses"
+    "gih"   "aeseh"
+    "gis"   "aes"
+    "gisih" "aeh"
+    "gisis" "a"   "beses"
+    "aih"   "beseh"
+    "ais"   "bes" "ceses"
+    "aisih" "beh"
+    "aisis" "b"   "ces"
+    "bih"   "ceh"
+    ))
+
+(define sym-pitch-2-hash (make-hash (map cons pitch-class-2-syms pitch-lily-strings-2)))
+
+(define (pitch-class->lily pitch)
+  (hash-ref sym-pitch-2-hash pitch))
 
 (define octave-lily-strings
   '(",,,"

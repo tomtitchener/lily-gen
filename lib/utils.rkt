@@ -56,6 +56,10 @@
   
   ;; take all but last element in list
   ;; [inits (-> (listof any/c) any/c)]
+
+  ;; compress input list to 2 * count with retrograde at midpoint
+  (squash-to-retro (-> exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c)))
+  
   ))
 
 (require (only-in algorithms scanl))
@@ -278,3 +282,18 @@
   (check-equal?
    (scanl (carry-op-maybe +) '(#f #f #f #f))
    '(#f #f #f #f)))
+
+;; compress input list to 2 * count with retrograde at midpoint by:
+;; - taking (add1 count) for first half, up to mid-point (start)
+;; - appending reverse of start less first and last pitches
+;; (-> exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c))
+(define (squash-to-retro count elements)
+  (unless (< count (length elements))
+    (error 'squash-to-retro "invalid count ~v given length ~v of elements ~v" count (length elements) elements))
+  (let* ([start (take elements (add1 count))])
+    (append start (drop (reverse (drop start 1)) 1))))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (squash-to-retro 3 '(1 2 3 4 5 6)) '(1 2 3 4 3 2)))
+
