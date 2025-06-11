@@ -44,6 +44,7 @@
 ;; implementation
 (require (only-in srfi/1 list-index))
 
+;; order by enharmonics
 (define pitch-class-syms
  '(Bs  C  Dff
    Bss Cs  Df
@@ -60,6 +61,7 @@
 
 ;; h -> quarter up
 ;; l -> quarter down
+;; order by enharmonics
 (define pitch-class-2-syms
  '(Bs  C   Dff
    Bsh Ch  Dfl

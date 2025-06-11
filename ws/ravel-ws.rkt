@@ -5,10 +5,8 @@
 
 (require lily-gen/ws/workspace)
 (require lily-gen/lib/utils)
-(require lily-gen/lib/motifs)
 (require lily-gen/lib/score)
 (require lily-gen/lib/scale)
-(require lily-gen/lib/pan-utils)
 
 ;; Une barque sur l'ocean
 
@@ -216,26 +214,5 @@
 
 ;; the repetition and additive layering makes me think of the minimalists, though with softer corners -- which was
 ;; part of my motivation trying my own hand at algorithms for gradual change
-
-;;
-
-(define quarter-tone-pitches-up (map (lambda (pc) (cons pc '0va)) (Scale-pitch-classes quarter-tones-up)))
-  
-(define quarter-tone-pitches-down (append
-                                   (map (lambda (pc) (cons pc '8va)) (take (Scale-pitch-classes quarter-tones-down) 2))
-                                   (map (lambda (pc) (cons pc '0va)) (drop (Scale-pitch-classes quarter-tones-down) 2))))
-
-(define quarter-tone-notes-up (map (lambda (p) (Note (car p) (cdr p) 'T '() #f)) quarter-tone-pitches-up))
-
-(define quarter-tone-notes-down (map (lambda (p) (Note (car p) (cdr p) 'T '() #f)) quarter-tone-pitches-down))
-
-(define quarter-tone-voice (PitchedVoice 'AcousticGrand 'PanCenter
-                                         (flatten (list (KeySignature 'C 'Major)
-                                                        quarter-tone-notes-up
-                                                        quarter-tone-notes-down))))
-
-(define quarter-tone-notes--score (parameterize ((time-signature/param (TimeSignatureSimple 2 'Q))
-                                                 (tempo/param (TempoDur 'E 40)))
-                                    (gen-score-file (score/parameterized (list quarter-tone-voice)))))
 
   
