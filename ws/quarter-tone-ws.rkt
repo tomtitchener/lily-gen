@@ -115,51 +115,6 @@
 ;; restriction:  oct has to be 29vb, 22vb, 15vb, 8vb, or 0va, else there's not room for four octaves
 ;; note: this cannot be a Scale because a Scale only contains pitch-classes, not pitches
 ;;       also, a Scale is limited to pitch classes within one octave and this spans four octaves
-;;
-
-;; only works for C
-(define/contract (make-harmonic-pitches-old start-pc start-oct)
-  (-> pitch-class? octave? (non-empty-listof pitch/c))
-  (when (not (member start-pc (append (Scale-pitch-classes chromatic-sharps) (Scale-pitch-classes chromatic-flats))))
-    (error 'make-harmonic-pitches "pitch class argument ~v is not a member of chromatic sharps ~v or chromatic flats ~v"
-           start-pc chromatic-sharps chromatic-flats))
-  (define harmonic-quarter-tone-intervals '(0 24 38 48 56 62 67 72 76 80 83 86 89 91 94 96))
-  (define restricted-octaves '(29vb 22vb 15vb 8vb 0va))
-  (let* ([base-oct-index (index-of restricted-octaves start-oct)]
-         [pitch-classes (reverse (Scale-pitch-classes quarter-tones-down))]
-         [start-pitch-index (index-of pitch-classes start-pc)]
-         [rooted-pitch-classes (rotate-list-by pitch-classes start-pitch-index)])
-    (when (not base-oct-index)
-      (error 'make-harmonic-pitches "octave argument ~v is not one of ~v" start-oct restricted-octaves))
-    (map (lambda (qtn-cnt) (let* ([quot (quotient qtn-cnt 24)]
-                                  [this-oct (list-ref octave-syms (+ base-oct-index quot))]
-                                  [rem  (remainder qtn-cnt 24)]
-                                  [this-pc (list-ref rooted-pitch-classes rem)])
-                             (cons this-pc this-oct)))
-         harmonic-quarter-tone-intervals)))
-
-;; always uses flats even for sharp keys
-(define/contract (make-harmonic-pitches-two start-pc start-oct)
-  (-> pitch-class? octave? (non-empty-listof pitch/c))
-  (when (not (member start-pc (append (Scale-pitch-classes chromatic-sharps) (Scale-pitch-classes chromatic-flats))))
-    (error 'make-harmonic-pitches "pitch class argument ~v is not a member of chromatic sharps ~v or chromatic flats ~v"
-           start-pc chromatic-sharps chromatic-flats))
-  (define harmonic-quarter-tone-intervals '(0 24 38 48 56 62 67 72 76 80 83 86 89 91 94 96))
-  (define restricted-octaves '(29vb 22vb 15vb 8vb 0va))
-  (let* ([start-oct-index (index-of restricted-octaves start-oct)]
-         [pitch-classes (rotate-list-by (reverse (Scale-pitch-classes quarter-tones-down)) -2)]
-         [start-pitch-index (index-of pitch-classes start-pc)])
-    (when (not start-oct-index)
-      (error 'make-harmonic-pitches "octave argument ~v is not one of ~v" start-oct restricted-octaves))
-    (map (lambda (qtn-cnt) (let* ([off-qtn-cnt (+ start-pitch-index qtn-cnt)]
-                                  [quot (quotient off-qtn-cnt 24)]
-                                  [this-oct (list-ref octave-syms (+ start-oct-index quot))]
-                                  [rem  (remainder off-qtn-cnt 24)]
-                                  [this-pc (list-ref pitch-classes rem)])
-                             (cons this-pc this-oct)))
-         harmonic-quarter-tone-intervals)))
-
-#;(eq? #\s (last (string->list (symbol->string 'Fs))))
 
 (define (pick-quarter-tones-pitch-classes pc)
   (match (last (string->list (symbol->string pc)))
