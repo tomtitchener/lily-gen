@@ -23,8 +23,8 @@ jobs:
         run: |
           export LILYPOND_VERSION=2.22
           mkdir ./lib/test
-	  cp ./adjust-expression.ly ./lib/test
+          cp ./adjust-expression.ly ./lib/test
           mkdir ./ws/test
-	  cp ./adjust-expression.ly ./ws/test
+          cp ./adjust-expression.ly ./ws/test
           raco pkg install --auto --no-docs
           raco test .
