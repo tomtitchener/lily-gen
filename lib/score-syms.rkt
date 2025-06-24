@@ -165,6 +165,14 @@
 
 (define (dynamic? d) (and (symbol? d) (member d dynamic-syms)))
 
+;; add TiedSwell for swell across tied notes via adjustExpression
+;; needs 1) initial dynamic 2) list of Notes, all should be tied 3) final dynamic
+;; output looks like:
+;; \adjustExpression "pppp" { } { c'''1\pppp\<~ ... } { } "ff"
+;; where list of notes may contain only one, all should be tied (except last, unless beginning of next note specifes new dynamic)
+;; but that won't work, because these are just added to controls list whereas what I need is a list of Note or even Chord so
+;; that puts it at the same level, which means a lot of switch statements to add
+;; also note this is all bracketed with the \midi tag because it doesn't go into a score
 (define swell-syms
   '(Crescendo
     Decrescendo
@@ -204,7 +212,7 @@
 
 ;; consider eigher symbol as above or real between -1.0 and 1.0
 ;; then could easily spread N voices equally
-(define (pan? s) (and (symbol? s) (member s pan-syms)))
+(define (pan? s) (or (and (symbol? s) (member s pan-syms)) (rational? s)))
 
 (define instr-syms
   '(AcousticGrand            Contrabass          LeadFfths 

@@ -356,7 +356,20 @@
                 [ctrls  (Note-controls note)]
                 [tie    (Note-tie (last ve-group))]
                 [notes  (ctrls-durs&pit->notes ctrls durs pitch tie)])
-           (cons (+ curlen addlen) (append ves notes)))]
+           ;; don't suppress controls on tied notes unless len is extended
+           ;; suppressing controls suppresses swells as well as articulations,
+           ;; so e.g. when a duration is extended as a tie and the original
+           ;; event included an accent repeat of accent makes no sense with
+           ;; a tie, could refine this by selectively suppressing accents only
+           ;; note: there's no midi mapping e.g. for volume change over
+           ;; tied notes so this renders in score but midi requires logic automation
+           ;; or plugin: https://lists.gnu.org/archive/html/lilypond-user/2016-07/msg00676.html
+           ;; https://lists.gnu.org/archive/html/lilypond-user/2016-07/txtKtKpJgs4gY.txt
+           (if (and (= (length ve-group) (length notes)) (= addlen (apply + (map duration->int durs))))
+               (begin 
+                 #;(printf "adjvesdurs addlen: ~v same as input: ~v\n" addlen (apply + (map duration->int durs)))
+                 (cons (+ curlen addlen) (append ves ve-group)))
+               (cons (+ curlen addlen) (append ves notes))))]
         [(and (> (length ve-group) 1) (Chord? (car ve-group)))
          (let* ([addlen  (apply + (map voice-event->duration-int ve-group))]
                 [durs    (add-end-durs-for-time-signature time-signature curlen addlen)]

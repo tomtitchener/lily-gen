@@ -479,6 +479,8 @@
 
 (define (increment-pan pan)
   (let ([pan-idx (index-of pan-syms pan)])
+    (when (not pan-idx)
+      (error 'increment-pan "index-of pan-syms ~v failed for pan value ~v\n" pan-syms pan))
     (list-ref pan-syms (modulo (add1 pan-idx) (length pan-syms)))))
 
 ;; bug: assumes pan is always first in list of controls

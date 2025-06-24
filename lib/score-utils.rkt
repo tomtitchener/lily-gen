@@ -62,6 +62,9 @@
 (define (num-denom-pr->barlen num-denom-pr)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
 
+(define (strip-accents ctrls)
+  (filter (lambda (c) (not (accent? c))) ctrls))
+
 ;; create tied notes one for each duration, all except last are tied
 ;; (-> (listof control/c) (non-empty-listof duration?) pitch/c boolean? (listof Note?))
 (define (ctrls-durs&pit->notes controls durations pitch tie)
@@ -73,7 +76,7 @@
              (list (Note pitch-class octave (car durs) ctrls tie))]
             [else
              (cons (Note pitch-class octave (car durs) ctrls #t)
-                   (loop '() (cdr durs)))]))))
+                   (loop (strip-accents ctrls) (cdr durs)))]))))
 
 (module+ test
   (require rackunit)

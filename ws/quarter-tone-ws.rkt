@@ -1,5 +1,4 @@
 #lang racket
-
 ;; quater-tone-ws.rkt:  quarter tones
 
 (require lily-gen/ws/workspace)
@@ -40,6 +39,7 @@
 ;; 1        2      3       4      5      6      7        8      9      10     11      12     13      14      15      16
 ;; C 15vb | C 8vb, G 8vb | C 0va, E 0va, G 0va, Bb 0va | C 1va, D 1va, E 1va, Gf 1va, G 1va, Af 1va, Bb 1va, B 1va | C 2va
 ;;                 +2             -14    +2     -31             +4     -14    -49     +2     +41     -31     -12
+;;                  2              16    18      49             53      67    116    118     159     190     202
 
 ;; 100 cents per semi-tone means 50 cents per quarter-tone, so the differences range from 48 to 1
 ;;
@@ -72,11 +72,11 @@
 ;; 1        2      3       4      5      6      7         8      9      10     11       12     13      14       15      16
 ;; C 15vb | C 8vb, G 8vb | C 0va, E 0va, G 0va, Bbl 0va | C 1va, D 1va, E 1va, Gfl 1va, G 1va, Al 1va, Bbl 1va, B 1va | C 2va
 ;;                 -2             +14    -2     -19              -4     +14    -1       -2     +9      -19      +12
+;;                  2              16    18      37              41      55    56       58     67       86       98
 
-
-;; Total of absolute of all unadjusted differences for the first 16 overtones:  202
+;; Total of absolute of all unadjusted differences for the first 16 overtones:  201
 ;; Total of absolute of all adjusted differences for the first 16 overtones:     98
-;; For a difference of 104 cents, or more than half of the original sum of 202.
+;; For a difference of 104 cents better, or about half of the original sum of 202.
 
 ;; What would it mean to have a "scale" made up of the first 16 overtones?
 ;; The difference between adjacent pitches goes from a lot to a little fast,
@@ -129,7 +129,7 @@
     (error 'make-harmonic-pitches "pitch class argument ~v is not a member of chromatic sharps ~v or chromatic flats ~v"
            start-pc chromatic-sharps chromatic-flats))
   (define harmonic-quarter-tone-intervals '(0 24 38 48 56 62 67 72 76 80 83 86 89 91 94 96))
-  (define restricted-octaves '(29vb 22vb 15vb 8vb 0va))
+  (define restricted-octaves '(29vb 22vb 15vb 8vb 0va)) ;; has to have 4 octaves to go up from, range goes 8va, 15va, 22va.
   (let* ([start-oct-index (index-of restricted-octaves start-oct)]
          [pitch-classes (pick-quarter-tones-pitch-classes start-pc)]
          [start-pitch-index (index-of pitch-classes start-pc)])
@@ -147,18 +147,26 @@
 ;; find starting point in reversed quarter-tones-down then count up quarter tones from there,
 ;; wrapping to new octave for pitch class and counting octaves from base of C to B
 
-
 (define (make-harmonics-notes pitches) (map (lambda (p) (Note (car p) (cdr p) 'H '() #f)) pitches))
 
 (define (sustain-all-notes notes)
-  (define (add-sust note) (match note [(Note p o d cs t) (Note p o d (cons 'SustainOn cs) t)]))
+  (define (add-sust note) (match note [(Note p o d cs t)
+                                       (Note p o d (cons 'SustainOn cs) t)]))
   (cons (add-sust (car notes)) (cdr notes)))
 
-(define (make-voice notes) (PitchedVoice 'AcousticGrand 'PanCenter (cons (KeySignature 'C 'Major) notes)))
+(define (hold-last-note notes)
+  (define (add-tie  note) (match note [(Note p o d cs _)
+                                       (Note p o d cs #t)]))
+  (let* ([inits (drop-right notes 1)]
+         [last  (last notes)]
+         [lasts (list (add-tie last) (add-tie last) (add-tie last) (add-tie last) last)])
+    (append inits lasts)))
 
-(define (score pc oct) (parameterize ((time-signature/param (TimeSignatureSimple 2 'Q))
+(define (make-voice instr pan clef notes) (PitchedVoice instr pan (cons clef notes)))
+
+#;(define (score pc oct) (parameterize ((time-signature/param (TimeSignatureSimple 2 'Q))
                                       (tempo/param (TempoDur 'Q 80)))
-                         (let* ([notes (sustain-all-notes (make-harmonics-notes (make-harmonic-pitches pc oct)))]
+                         (let* ([notes (hold-last-note (sustain-all-notes (make-harmonics-notes (make-harmonic-pitches pc oct))))]
                                 [voice (make-voice notes)])
                            (gen-score-file (score/parameterized (list voice))))))
 
@@ -172,4 +180,71 @@
   (check-equal? (make-harmonic-pitches 'C '15vb) explicit-c-harmonics-pitches) 
   )
 
+#;(define (make-swell-notess cnt-swells pitches indexes dur ctrlss end-dyn)
+  (let ([pits (map (lambda (i) (list-ref pitches i)) indexes)])
+    (map (lambda (pit)
+           (append (map
+                    (lambda (durs ctrls) (Note (car pit) (cdr pit) durs ctrls #t))
+                    (drop-right durs 1) (drop-right ctrlss 1))
+                   (list (Note (car pit) (cdr pit) (last durs) (last ctrlss) #f))))
+         pits)))
 
+#;(define (make-swell-notess cnt-swells pitches indexes dur ctrlss end-dyn)
+  (let ([pits (map (lambda (i) (list-ref pitches i)) indexes)])
+    (map (lambda (pit)
+           (let* ([pc (car pit)]
+                  [oct (cdr pit)]
+                  [swell-up-ctrls (first ctrlss)]
+                  [swell-down-ctrls (last ctrlss)]
+                  [swells (flatten
+                           (make-list
+                            cnt-swells
+                            (list (Note pc oct dur swell-up-ctrls #t)
+                                  (Note pc oct dur swell-down-ctrls #t))))])
+             (flatten (make-list cnt-swells (append swells (list (Note pc oct dur (list end-dyn) #f)))))))
+         pits)))
+
+(define (make-swell pit dur ctrlss)
+  (let ([pc (car pit)]
+        [oct (cdr pit)])
+    (list (Note pc oct dur (first ctrlss) #t) (Note pc oct dur (last ctrlss) #t))))
+
+(define (make-end pit dur end-dyn)
+  (Note (car pit) (cdr pit) dur (list end-dyn) #f))
+
+(define (make-swell-notess pitches indexes dur ctrlss end-dyn)
+  (let* ([pits (map (lambda (i) (list-ref pitches i)) indexes)])
+    (map (lambda (pit) (append (make-swell pit dur ctrlss) (list (make-end pit dur end-dyn)))) pits)))
+
+(define (score pc oct) (parameterize ((time-signature/param (TimeSignatureSimple 4 'Q))
+                                      (tempo/param (TempoDur 'Q 80))
+                                      (instr/param 'Clarinet))
+                         (let* ([pits (make-harmonic-pitches pc oct)]
+                                [ixs (reverse   (list 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))]
+                                [swell-ctrlss   (list (list 'PPPPP 'Crescendo) (list 'FFF 'Decrescendo))]
+                                [swell-notess   (make-swell-notess pits ixs 'W swell-ctrlss 'PPPPP)]
+                                [cresc-ctrlss   (list (list 'PPPPP 'Crescendo) (list 'FFF))]
+                                [cresc-notess   (make-swell-notess pits ixs 'W cresc-ctrlss 'FFF)]
+                                [decresc-ctrlss (list (list 'FFF 'Decrescendo) (list 'PPPPP))]
+                                [decresc-notess (make-swell-notess pits ixs 'W decresc-ctrlss 'PPPPP)]
+                                [all-notess (map append swell-notess cresc-notess decresc-notess)]
+                                [pans   (voice-cnt->pan-distrib (length all-notess))]
+                                [instrs (flatten (map (lambda (instr) (make-list 4 instr)) '(Flute Clarinet EnglishHorn Bassoon)))]
+                                [clefs  (append (make-list 12 'Treble) (make-list 4 'Bass))])
+                           (gen-score-file (score/parameterized (map make-voice instrs pans clefs all-notess))))))
+
+;; Consider MD simulations and process of folding as model for morphing shape.
+
+;; Messing with midiExpressionLevel or midiReverbLevel doesn't make a difference with Logic
+
+;; Also, you have to careful letting a channel with pitch bend go to the end.
+;; Interrupt the channel in mid-playback and you may get some wacky effects when you restart, lasting for duration of Logic session.
+
+;; Also, dynamics aren't reliable, for example, swell to fff followed by a new attack on fff comes much louder the second time.
+;; Lilypond says suppored dynamic range is ppppp to fffff, but ppppp isn't really soft.  Will need post-processing in Logic to
+;; temper dynaics by instrument section.
+
+;; 1 3 5 6 8 9 11 12 13 15
+;; flute, flute, flute, clarinet, clarinet, clarinet, english horn, english horn, bassoon, bassoon
+
+;; 2 4 6 7 9 10 12 14 16

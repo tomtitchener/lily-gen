@@ -8,6 +8,7 @@
 (require lily-gen/lib/meter)
 (require lily-gen/lib/score)
 (require lily-gen/lib/score-utils)
+(require lily-gen/lib/swell-utils)
 (require lily-gen/lib/scale)
 
 ;; general-purpose params, common to specialized generators
@@ -57,8 +58,9 @@
 (define/contract (score/parameterized voices)
   (-> (listof voice/c) Score?)
   (let* ([voices-group (VoicesGroup (tempo/param) (time-signature/param) voices)]
-         [extended&aligned-voices-group (extend&align-voices-group-durations voices-group)])
-    (Score (score-title/param) (score-copyright/param) (list extended&aligned-voices-group))))
+         [extended&aligned-voices-group (extend&align-voices-group-durations voices-group)]
+         [extended&aligned-voices-group-with-swells (encode-voices-group-swells extended&aligned-voices-group)])
+    (Score (score-title/param) (score-copyright/param) (list extended&aligned-voices-group-with-swells))))
 
 ;; consumes file-name/param, e.g.
 ;; (gen-score-file (score/parameterized (transpose-iterate-voices/parameterized)))

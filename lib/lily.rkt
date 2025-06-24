@@ -34,12 +34,14 @@
 
 (define/contract (note->lily note)
   (-> Note? string?)
-  (string-append
-   (pitch->lily (cons (Note-pitch note) (Note-octave note)))
-   (duration->lily (Note-dur note))
-   (maybe-format-sempre-data (Note-tie note))
-   (apply string-append (map control->lily (Note-controls note)))
-   (if (Note-tie note) "~" "")))
+  (let ([ret
+         (string-append
+          (pitch->lily (cons (Note-pitch note) (Note-octave note)))
+          (duration->lily (Note-dur note))
+          (maybe-format-sempre-data (Note-tie note))
+          (apply string-append (map control->lily (Note-controls note)))
+          (if (Note-tie note) "~" ""))])
+    ret))
 
 (define/contract (rest->lily rest)
   (-> Rest? string?)
@@ -51,13 +53,25 @@
   (let ([duration (Spacer-dur spacer)])
     (string-append "s" (duration->lily duration))))
 
-(define/contract (tuplet->lily tuplet)
-  (-> Tuplet? string?)
+(define/contract (tuplet->lily is-midi tuplet)
+  (-> boolean? Tuplet? string?)
   (let ([num   (Tuplet-num   tuplet)]
         [denom (Tuplet-denom tuplet)]
         [dur   (duration->lily (Tuplet-dur tuplet))]
-        [notes (string-join (map voice-event->lily (Tuplet-notes tuplet)) " ")])
+        [notes (string-join (map (lambda (voice-event) (voice-event->lily is-midi voice-event)) (Tuplet-notes tuplet)) " ")])
     (format "\\tuplet ~a/~a ~a { ~a }" num denom dur notes)))
+
+;;  \tag #'midi
+(define/contract (Swell->lily is-midi swell)
+  (-> boolean? Swell? string?)
+  (match swell
+    [(Swell start-dyn ves stop-dyn)
+     (if is-midi
+         (let ([start (list->string (drop (string->list (dynamic->lily start-dyn)) 1))]
+               [notes (string-join (map (lambda (voice-event) (voice-event->lily #t voice-event)) ves) " ")]
+               [stop  (list->string (drop (string->list (dynamic->lily stop-dyn) ) 1))])
+           (format "\\adjustExpression \"~a\" { }  { ~a } { } \"~a\"" start notes stop))
+         (string-join (map (lambda (voice-event) (voice-event->lily #f voice-event)) ves) " "))]))
 
 (define/contract (pitch->lily pitch)
   (-> pitch/c string?)
@@ -208,12 +222,13 @@
         [(TimeSignatureCompound? time-signature) (time-signature-compound->lily time-signature)]
         [else (error "timesignature->lily unexpected time signature")]))
 
-(define/contract (voice-event->lily voiceevent)
-  (-> voice-event/c string?)
+(define/contract (voice-event->lily is-midi voiceevent)
+  (-> boolean? voice-event/c string?)
   (cond [(Note?         voiceevent) (note->lily          voiceevent)]
         [(Rest?         voiceevent) (rest->lily          voiceevent)]
         [(Spacer?       voiceevent) (spacer->lily        voiceevent)]
-        [(Tuplet?       voiceevent) (tuplet->lily        voiceevent)]
+        [(Tuplet?       voiceevent) (tuplet->lily        is-midi voiceevent)]
+        [(Swell?        voiceevent) (Swell->lily         is-midi voiceevent)]
         [(Chord?        voiceevent) (chord->lily         voiceevent)]
         [(clef?         voiceevent) (clef->lily          voiceevent)]
         [(KeySignature? voiceevent) (keysignature->lily  voiceevent)]
@@ -221,20 +236,20 @@
         [(Ordinale?     voiceevent) (reset-sempre-data)]
         [else (error "voice-event->lily unexpected voiceevent")]))
 
-(define/contract (pitched-voice->lily tempo time-signature voice)
-  (-> tempo/c time-signature/c PitchedVoice? string?)
+(define/contract (pitched-voice->lily is-midi tempo time-signature voice)
+  (-> boolean? tempo/c time-signature/c PitchedVoice? string?)
   (let ([instr  (PitchedVoice-instr        voice)]
         [pan    (PitchedVoice-pan-position voice)]
         [events (PitchedVoice-voiceevents  voice)])
     @string-append{
     \new Voice
     {\set Staff.instrumentName = #"@(instr->short-lily instr)" \set Staff.midiInstrument = #"@(instr->lily instr)" @(pan->lily pan)
-          @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map voice-event->lily events))))) \bar "|."
+          @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map (lambda (event) (voice-event->lily is-midi event)) events))))) \bar "|."
     }
     }))
 
-(define/contract (keyboard-voice->lily tempo time-signature voice )
-  (-> tempo/c time-signature/c KeyboardVoice? string?)
+(define/contract (keyboard-voice->lily is-midi tempo time-signature voice )
+  (-> boolean? tempo/c time-signature/c KeyboardVoice? string?)
   (let* ([instr      (KeyboardVoice-instr           voice)]
          [pan        (KeyboardVoice-pan-position    voice)]
          [eventspair (KeyboardVoice-voiceeventspair voice)]
@@ -247,13 +262,13 @@
     \new Staff = "rh" {
     @(pan->lily pan)
     \new Voice {                       
-    @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map voice-event->lily treble))))) \bar "|."
+    @(string-join (cons (tempo->lily tempo) (cons (time-signature->lily time-signature) (cons (pan->markup pan) (map (lambda (voice-event) (voice-event->lily is-midi voice-event)) treble))))) \bar "|."
     }
     }
     \new Staff = "lh" {
     @(pan->lily pan)
     \new Voice {                       
-    @(string-join (cons (time-signature->lily time-signature) (map voice-event->lily bass))) \bar "|."
+    @(string-join (cons (time-signature->lily time-signature) (map (lambda (voice-event) (voice-event->lily is-midi voice-event)) bass))) \bar "|."
     }
     }    
     >>
@@ -261,8 +276,8 @@
     }
     ))
 
-(define/contract (splitstaff-voice->lily tempo time-signature voice)
-  (-> tempo/c time-signature/c SplitStaffVoice? string?)
+(define/contract (splitstaff-voice->lily is-midi tempo time-signature voice)
+  (-> boolean? tempo/c time-signature/c SplitStaffVoice? string?)
   (let* ([instr  (SplitStaffVoice-instr        voice)]
          [pan    (SplitStaffVoice-pan-position voice)]
          [events (SplitStaffVoice-voiceevents  voice)])
@@ -273,7 +288,7 @@
     \new Staff = "up" {
     @(pan->lily pan)
     \new Voice {                       
-    \clef treble \autoChange c' { @(tempo->lily tempo) @(time-signature->lily time-signature) @(pan->markup pan) @(string-join (map voice-event->lily events)) } \bar "|."
+    \clef treble \autoChange c' { @(tempo->lily tempo) @(time-signature->lily time-signature) @(pan->markup pan) @(string-join (map (lambda (voice-event) (voice-event->lily is-midi voice-event)) events)) } \bar "|."
     }
     }
     \new Staff = "down" {
@@ -287,11 +302,11 @@
     }
     ))
 
-(define/contract (voice->lily tempo time-signature voice)
-  (-> tempo/c time-signature/c voice/c string?)
-  (cond [(PitchedVoice?    voice) (pitched-voice->lily    tempo time-signature voice)]
-        [(KeyboardVoice?   voice) (keyboard-voice->lily   tempo time-signature voice)]
-        [(SplitStaffVoice? voice) (splitstaff-voice->lily tempo time-signature voice)]
+(define/contract (voice->lily is-midi tempo time-signature voice)
+  (-> boolean? tempo/c time-signature/c voice/c string?)
+  (cond [(PitchedVoice?    voice) (pitched-voice->lily    is-midi tempo time-signature voice)]
+        [(KeyboardVoice?   voice) (keyboard-voice->lily   is-midi tempo time-signature voice)]
+        [(SplitStaffVoice? voice) (splitstaff-voice->lily is-midi tempo time-signature voice)]
         [else (error "voice->lily unexpected voice")]))
 
 (define/contract (split-staff->pitched-voice voice)
@@ -305,16 +320,14 @@
 
 (define/contract (voices-group->midi-voices-group voices-group)
   (-> VoicesGroup? VoicesGroup?)
-  (VoicesGroup (VoicesGroup-tempo voices-group)
-               (VoicesGroup-time-signature voices-group)
-               (map split-staff->pitched-voice (VoicesGroup-voices voices-group))))
+  (struct-copy VoicesGroup voices-group [voices (map split-staff->pitched-voice (VoicesGroup-voices voices-group))]))
 
-(define/contract (voice-group->lily voice-group)
-  (-> VoicesGroup? string?)
+(define/contract (voice-group->lily is-midi voice-group)
+  (-> boolean? VoicesGroup? string?)
   (let ([tempo          (VoicesGroup-tempo          voice-group)]
         [time-signature (VoicesGroup-time-signature voice-group)]
         [voices         (VoicesGroup-voices         voice-group)])
-    (string-join (map (lambda (voice) (voice->lily tempo time-signature voice)) voices))))
+    (string-join (map (lambda (voice) (voice->lily is-midi tempo time-signature voice)) voices))))
 
 ;; (-> Score? string?)
 (define (score->lily score)
@@ -326,16 +339,17 @@
       (error 'score->lily "no LILYPOND_VERSION environment variable"))
     @string-append{
     \include "articulate.ly"
+    \include "./adjust-expression.ly"
     \version "@lilypond-version"
     \header { title = "@title" copyright = "@copyright" }
     layout-structure = {
     <<
-    @(string-join (map voice-group->lily voice-groups))
+    @(string-join (map (lambda (g) (voice-group->lily #f g)) voice-groups))
     >>
     }
     midi-structure = {
     <<
-    @(string-join (map voice-group->lily (map voices-group->midi-voices-group voice-groups)))
+    @(string-join (map (lambda (g) (voice-group->lily #t g)) (map voices-group->midi-voices-group voice-groups)))
     >>
     }
     \score { \removeWithTag #'midi \layout-structure \layout { \context { \Voice \remove "Note_heads_engraver" \consists "Completion_heads_engraver" \remove "Rest_engraver" \consists "Completion_rest_engraver" } } }
@@ -468,24 +482,3 @@
          [score                    (make-score "selfsim voices" (list voices-group))])
       (test-score "self-sim-voices" score)))
 
-;; Next steps:
-;; * make routine for quick turnaround that outputs a self-similar score from args:
-;;   - count generations
-;;   - list of generations to extract for making voices
-;;   - input routine to generate list of list of rhythms (including rests) per voice
-;;     using list of pitches per voice, account for relative numbers of pitches per
-;;     voice, which is actually a function of length of kernel and number of generation
-;;     so e.g. per-generation multiplier is length of kernel * difference in generations
-;;   - result should be creating and rendering score with lilypond ready to listen to
-;;
-;; Or maybe before trying to launch into integration of pitch and rhythm, just leave as is
-;; and focus on interaction between kernel and init, also effect of 2x, 3x, 4x, and etc.
-;; kernel lengths and length of inits
-;;
-;; Leverage parameters:  create parameters for key-signature, pair, kernel, inits,
-;; tempo, time-signature, title, start pitch, list of generations to extract for voices, ...
-;; Create a no-argument routine that initializes values from the parameters
-;; and which produces e.g. a score I can pass to another routine to call
-;; lilypond and answer if it succeeded or failed.
-;;
-;; Then explore interactively starting from very simple values for the kernel and inits lists.

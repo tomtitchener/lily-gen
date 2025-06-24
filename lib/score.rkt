@@ -12,6 +12,7 @@
  (struct-out SplitStaffVoice)
  (struct-out VoicesGroup)
  (struct-out Note)
+ (struct-out Swell)
  (struct-out Rest)
  (struct-out Spacer)
  (struct-out Tuplet)
@@ -126,6 +127,14 @@
 ;; - the total duration adjusted for num and denom is (* (/ (* 16 6) 3) 2) = 64 or (* 16 4)
 (struct Tuplet (num denom dur notes) #:guard tuplet-ctor-guard #:transparent)
 
+(define swell-note/c
+  (make-flat-contract #:name 'swell-note/c #:first-order (or/c Note? #;Rest? #;Chord? #;Tuplet?)))
+
+(struct/contract Swell ([start-dyn dynamic?]
+                        [ves       (listof swell-note/c)]
+                        [stop-dyn  dynamic?])
+                 #:transparent)
+
 (struct/contract TempoDur ([dur   duration?]
                            [perMin natural-number/c])
                  #:transparent)
@@ -169,7 +178,7 @@
   (make-flat-contract #:name 'time-signature/c #:first-order (or/c TimeSignatureSimple? TimeSignatureGrouping? TimeSignatureCompound?)))
 
 (define voice-event/c
-  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Sempre? Ordinale? Note? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
+  (make-flat-contract #:name 'voice-event/c #:first-order (or/c Sempre? Ordinale? Note? Swell? Rest? Spacer? Tuplet? Chord? clef? KeySignature?)))
 
 ;; in 128ths 
 (define duration-vals

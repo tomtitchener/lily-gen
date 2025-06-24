@@ -132,7 +132,7 @@
 (define (dynamic->lily dynamic)
   (hash-ref sym-dynamic-hash dynamic))
 
-(define swell-lily-strings '("\\<", "\\>", "\\espressivo", "\\!"))
+(define swell-lily-strings '("\\<" "\\>" "\\espressivo" "\\!"))
 
 (define sym-swell-hash (make-hash (map cons swell-syms swell-lily-strings)))
 
@@ -165,10 +165,13 @@
 (define sym-pan-hash (make-hash (map cons pan-syms pan-vals)))
 
 (define (pan->lily pan)
-  (format "\\set Staff.midiPanPosition = ~v" (hash-ref sym-pan-hash pan)))
+  (if (symbol? pan)
+      (format "\\set Staff.midiPanPosition = ~v" (hash-ref sym-pan-hash pan))
+      (format "\\set Staff.midiPanPosition = ~v" pan)))
 
 (define (pan->markup pan)
-  (format "^\\markup{ \\tiny \\italic ~v }" (symbol->string pan)))
+  #;(format "^\\markup{ \\tiny \\italic ~v }" (symbol->string pan))
+  "")
 
 (define (ann->lily ann)
   (string-append "^\\markup { \\italic \"" ann "\" }"))
