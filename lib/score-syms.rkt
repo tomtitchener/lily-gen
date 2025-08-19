@@ -7,13 +7,17 @@
  maybe-pitch/c
  maybe-pitch-or-pitches/c 
  ;; all are either (listof symbol?) or (-> symbol? boolean?)
- pitch-class-syms
+ #;pitch-class-syms
  pitch-class-2-syms
  pitch-class?
+ accidental-syms
+ accidental?
  octave-syms
  octave?
  duration-syms
  duration?
+ denom-duration-syms
+ denom-duration?
  accent-syms
  accent?
  dynamic-syms
@@ -91,6 +95,11 @@
 
 (define (pitch-class? p) (and (symbol? p) (member p pitch-class-2-syms)))
 
+;; includes quarter-tones
+(define accidental-syms '(ff fl  f  l  n  h  s sh ss))
+
+(define (accidental? a) (and (symbol? a) (member a accidental-syms)))
+
 (define octave-syms
  '(29vb
    22vb
@@ -131,6 +140,19 @@
    HTE))
 
 (define (duration? d) (and (symbol? d) (member d duration-syms)))
+
+(define denom-duration-syms
+ '(W
+   H
+   Q
+   E
+   S
+   T
+   SF
+   HTE))
+
+(define (denom-duration? d) (and (symbol? d) (member d denom-duration-syms)))
+
 
 (define accent-syms
   '(Marcato

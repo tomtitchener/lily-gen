@@ -471,7 +471,7 @@
 ;; - as is
 ;; - with overlapping segments
 ;; - with skipped steps repeated three times
-(parameterize ((tempo/param (TempoDur 'Q 100)))
+#; (parameterize ((tempo/param (TempoDur 'Q 100)))
   (let* ([start-pitch (cons 'C '15vb)]
          [pattern     '((0 (Accent) (S)) (2 () (T)) (2 () (T)) (-1 () (T)) (1 () (T)) ((1 2 1) () (S)))]
          [intervals   '(2 2 2 3 3 4 4 5 1 1 1 -1 -1 -1 -5 -4 -4 -3 -3 -2 -4)]
@@ -557,5 +557,369 @@
     (gen-score-file (score/parameterized (render-canon-voices))))
 |#
 
+;; maybe all this stuff is just over-thinking things
+;; my Haskell code just has the pitch sequences, durations are uniform and unchanging, there are no accents
+;; the dyanamic swells in the first half are hacked in by hand to the Lilypond input and via Logic to the midi,
+;; there are no dynamic marks in the second part at all
 
+;; the trickiest thing to the Haskell code is threading the note changes through the voices, see ComposeOps.hs diagrams
+;; another thing in the Haskell piece is the difference between the relentless 3 16 meter in the first half vs the
+;; irregularity of the second half, notated as 20 16 divided as 5 + 5 + 5 + 5 + 2, audible as a shifting, irregular
+;; pattern of 20 pitches vs. 15 of the first section
 
+;;
+;; echoPitches :: Pitches
+;; echoPitches = 
+;;     [ 
+;;      Pitch Ef 2
+;;     ,Pitch Bf 1
+;;     ,Pitch C  2
+;;     ,Pitch Bf 1
+;;     ,Pitch F  1
+;;     ,Pitch Ef 1
+;;     ,Pitch G  1
+;;     ,Pitch Af 1
+;;     ,Pitch Ef 1
+;;     ,Pitch Af 1
+;;     ,Pitch G  1
+;;     ,Pitch C  2
+;;     ,Pitch Bf 1
+;;     ,Pitch Ef 2
+;;     ,Pitch C  2
+;;     ]
+
+;; dancePitches :: Pitches
+;; dancePitches = 
+;;     [ 
+;;     Pitch C 2
+;;     ,Pitch Ef 1
+;;     ,Pitch F 1
+;;     ,Pitch C 1
+;;     ,Pitch G 1
+;;     ,Pitch Af 0
+;;     ,Pitch G 1
+;;     ,Pitch C 1
+;;     ,Pitch Af 0
+;;     ,Pitch C 2
+;;     ,Pitch Ef 1
+;;     ,Pitch C 1
+;;     ,Pitch Ef 1
+;;     ,Pitch Af 0
+;;     ,Pitch F 1
+;;     ,Pitch C 1
+;;     ,Pitch Ef 2
+;;     ,Pitch F 1
+;;     ,Pitch C 1
+;;     ,Pitch Ef 1
+;;     ,Pitch C 1
+;;     ,Pitch F 1
+;;     ]
+
+;; in my code these become interval sequences with a key signature and a starting pitch maybe with maybe-interval-or-intervals/c
+;; contract for rests and chords to produce a list of maybe-pitch-or-pitches/c
+;;
+;; then maybe a) separate lists of durations that could be longer or shorter than list of intervals and b) separate list of
+;; accents, though probably should have the two combined to yield notes
+
+;; these are absolute values for familiar intervals, where 1 means unison for easier reading
+;; sequence across break is 2 1 -2 => 1 0 -1 so > 0 decrements, < = increments
+;; before calling render-maybe-intervalss-motif, first convert with decr/incr,
+;; then convert to relative for inner call to transpose/successive in render-maybe-intervalss-motif
+
+#| solved via render-abs-maybe-intervalss-motif
+
+(define/contract (abs->rel mintss)
+  (-> maybe-interval-or-intervalss/c maybe-interval-or-intervalss/c)
+  (let loop ([prev 0]
+             [rest mintss])
+    (match rest
+      ['()
+       '()]
+      [(cons mis miss)
+       (match mis
+         [(? list? mis)
+          (let* ([next-is (squeeze mis)]
+                 [new-prev (findf (compose not false?) next-is)])
+            (cons next (loop new-prev next-is)))]
+         [#f
+          (cons #f (loop prev miss))]
+         [i
+           let ([new-i (squeeze i)])
+            (cons new-i (loop new-i miss))])])))
+|#
+
+;; internally, transposition is 0 based, e.g. 0 => unison, +/-1 one step up, one step down, etc.
+;; but historically the name for a single step up and down is a second and the name for identity
+;; as in 1 with respect to multiplication is unison, so it's easier when writing down an interval
+;; series to use 2, 3, 4, etc. for second, third, fourth etc.
+;; this routine squeees the traditional terms down so e.g. -1/1 becomes 0, 2,3.. become 1,2..,
+;; and -2,-3.. become -1,-2..
+;; note maybe-interval-or-intervalss/c includes #f for rests and a sub-list for chords, so it
+;; handles those, too
+;; the only illegal input value is 0
+;; note the definition of maybe-interval-or-intervalss/c does not allow nested lists
+(define/contract (squeeze-mint-or-intss mints)
+  (-> maybe-interval-or-intervalss/c maybe-interval-or-intervalss/c)
+  (match mints
+    [#f #f]
+    [(? list? mints)
+     (map squeeze-mint-or-intss mints)]
+    [i
+     (match i
+       [0 (error 'squeeze-mint-or-intss "illegal 0 val not in range [..-2,-1,1,2..]")]
+       [(? positive? i) (sub1 i)]
+       [i (add1 i)])]))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (squeeze-mint-or-intss '(-1 -2 #f (-3 -2) 3 2 1)) '(0 -1 #f (-2 -1) 2 1 0))
+  (define intervals '(4 5 2 -2 1 -6 -4 9 -7 6 -6 -3 1 3 -3))
+  (check-equal?
+   (render-abs-maybe-intervalss-motifs C-major '(C . 0va) (map (lambda (i) (list i '() '(E))) (squeeze-mint-or-intss intervals)))
+   (list
+    (Note 'F '0va 'E '() #f)  ;  4
+    (Note 'G '0va 'E '() #f)  ;  5
+    (Note 'D '0va 'E '() #f)  ;  2
+    (Note 'B '8vb 'E '() #f)  ; -2
+    (Note 'C '0va 'E '() #f)  ;  1
+    (Note 'E '8vb 'E '() #f)  ; -6
+    (Note 'G '8vb 'E '() #f)  ; -4 
+    (Note 'D '8va 'E '() #f)  ;  9
+    (Note 'D '8vb 'E '() #f)  ; -7
+    (Note 'A '0va 'E '() #f)  ;  6
+    (Note 'E '8vb 'E '() #f)  ; -6
+    (Note 'A '8vb 'E '() #f)  ; -3 
+    (Note 'C '0va 'E '() #f)  ;  1
+    (Note 'E '0va 'E '() #f)  ;  3
+    (Note 'A '8vb 'E '() #f)  ; -3
+    )))
+
+(define controlss/c (make-flat-contract #:name 'controlss/c #:first-order (non-empty-listof (listof control/c))))
+
+(define durationss/c (make-flat-contract #:name 'durationss/c #:first-order (non-empty-listof (listof duration?))))
+
+;; not working properly when any/c for src-list is itself a list,
+;; needed to match length e.g. of a list of list of durations ((E E) (Q) (S S))
+;; recursion would probably be simpler 
+(define (list-match-length src-list target-len)
+  (-> (listof any/c) exact-nonnegative-integer? (listof any/c))
+  (let ([src-len  (length src-list)])
+    (cond [(eq? src-len target-len)
+           src-list]
+          [(> src-len target-len)
+           (drop-right src-list (- src-len target-len))]
+          [else ;; > target-len src-len
+           (let ([fill-len (- target-len src-len)])
+             (append src-list (take (apply append (make-list fill-len src-list)) fill-len)))])))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (list-match-length '(1 2 3) 20)
+                '(1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2 3 1 2))
+  (check-equal? (list-match-length '(1 2 3) 0)
+                '())
+  (check-equal? (list-match-length '(1 2 3) 1)
+                '(1))
+  (check-equal? (list-match-length '(1 2 3) 2)
+                '(1 2))
+  (check-equal? (list-match-length '(1 2 3) 3)
+                '(1 2 3))
+  (check-equal? (list-match-length '(1 2 3) 4)
+                '(1 2 3 1))
+  (check-equal? (list-match-length '(1 (2 3) 4) 5)
+                '(1 (2 3) 4 1 (2 3))))
+
+;; build a list of rotated note/rest/chord
+(define/contract (build-voice-events rot scale start-pitch mint-or-intss durs ctrlss)
+  (-> exact-integer? Scale? pitch/c maybe-interval-or-intervalss/c durationss/c controlss/c (non-empty-listof voice-event/c))
+  (let* ([abs-mint-or-intss (squeeze-mint-or-intss mint-or-intss)]
+         [ints-len (length abs-mint-or-intss)]
+         [all-durs (list-match-length durs ints-len)]
+         [all-ctrls (list-match-length ctrlss ints-len)]
+         [mintss-mot-elems (map (lambda (i cs ds) (list i cs ds)) abs-mint-or-intss all-ctrls all-durs)])
+    (render-abs-maybe-intervalss-motifs scale start-pitch (rotate-list-by mintss-mot-elems rot))))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (build-voice-events 0 C-major '(C . 0va) '(4 5 2 -2 1 -6 -4 9 -7 6 -6 -3 1 3 -3) '((E) (S.)) '((Accent) () ()))
+                (list
+                 (Note 'F '0va 'E '(Accent) #f)
+                 (Note 'G '0va 'S. '() #f)
+                 (Note 'D '0va 'E '() #f)
+                 (Note 'B '8vb 'S. '(Accent) #f)
+                 (Note 'C '0va 'E '() #f)
+                 (Note 'E '8vb 'S. '() #f)
+                 (Note 'G '8vb 'E '(Accent) #f)
+                 (Note 'D '8va 'S. '() #f)
+                 (Note 'D '8vb 'E '() #f)
+                 (Note 'A '0va 'S. '(Accent) #f)
+                 (Note 'E '8vb 'E '() #f)
+                 (Note 'A '8vb 'S. '() #f)
+                 (Note 'C '0va 'E '(Accent) #f)
+                 (Note 'E '0va 'S. '() #f)
+                 (Note 'A '8vb 'E '() #f)))
+  (check-equal? (build-voice-events 1 C-major '(C . 0va) '(4 5 2 -2 1 -6 -4 9 -7 6 -6 -3 1 3 -3) '((E) (S.)) '((Accent) () ()))
+                (list
+                 (Note 'G '0va 'S. '() #f)
+                 (Note 'D '0va 'E '() #f)
+                 (Note 'B '8vb 'S. '(Accent) #f)
+                 (Note 'C '0va 'E '() #f)
+                 (Note 'E '8vb 'S. '() #f)
+                 (Note 'G '8vb 'E '(Accent) #f)
+                 (Note 'D '8va 'S. '() #f)
+                 (Note 'D '8vb 'E '() #f)
+                 (Note 'A '0va 'S. '(Accent) #f)
+                 (Note 'E '8vb 'E '() #f)
+                 (Note 'A '8vb 'S. '() #f)
+                 (Note 'C '0va 'E '(Accent) #f)
+                 (Note 'E '0va 'S. '() #f)
+                 (Note 'A '8vb 'E '() #f)
+                 (Note 'F '0va 'E '(Accent) #f)))
+  (check-equal? (build-voice-events 1 C-major '(C . 0va) '(4 5 2 -2 1 (-6 1 2) -4 #f 9 -7 (6 8 10) -6 -3 1 3 -3) '((E) (S.)) '((Accent) () ()))
+                (list
+                 (Note 'G '0va 'S. '() #f)
+                 (Note 'D '0va 'E '() #f)
+                 (Note 'B '8vb 'S. '(Accent) #f)
+                 (Note 'C '0va 'E '() #f)
+                 (Chord '((E . 8vb) (E . 8vb) (F . 8vb)) 'S. '() #f)
+                 (Note 'G '8vb 'E '(Accent) #f)
+                 (Rest 'S.)
+                 (Note 'D '8va 'E '() #f)
+                 (Note 'D '8vb 'S. '(Accent) #f)
+                 (Chord '((A . 0va) (A . 8va) (C . 15va)) 'E '() #f)
+                 (Note 'E '8vb 'S. '() #f)
+                 (Note 'A '8vb 'E '(Accent) #f)
+                 (Note 'C '0va 'S. '() #f)
+                 (Note 'E '0va 'E '() #f)
+                 (Note 'A '8vb 'S. '(Accent) #f)
+                 (Note 'F '0va 'E '(Accent) #f))))
+
+;; a choir of rotated voices
+#;(define/contract (build-choir tempo time-signature instrument rots scale start-pitch mint-or-intss durs ctrlss)
+  (-> tempo/c time-signature/c instr? (non-empty-listof exact-integer?) Scale? pitch/c maybe-interval-or-intervalss/c durationss/c controlss/c VoicesGroup?)
+  (let ([voice-eventss (map (lambda (rot) (build-voice-events rot scale start-pitch mint-or-intss durs ctrlss)) rots)])
+    (VoicesGroup tempo time-signature (map (lambda (voice-events) (SplitStaffVoice instrument 'PanCenter voice-events)) voice-eventss))))
+
+(define (build-voice-eventss-for-rots rots scale start-pitch mint-or-intss durs ctrlss)
+  (map (lambda (rot) (build-voice-events rot scale start-pitch mint-or-intss durs ctrlss)) rots))
+
+;; a choir of rotated voices
+#;(define/contract (build-voices instrument rots scale start-pitch mint-or-intss durs ctrlss)
+  (-> instr? (non-empty-listof exact-integer?) Scale? pitch/c maybe-interval-or-intervalss/c durationss/c controlss/c (non-empty-listof voice/c))
+  (let ([voice-eventss (build-voice-eventss-for-rots rots scale start-pitch mint-or-intss durs ctrlss)]
+        [pans (voice-cnt->pan-distrib (length rots))])
+    (map (lambda (voice-events pan) (SplitStaffVoice instrument pan voice-events)) voice-eventss pans)))
+
+(define/contract (build-multi-rots-voices instrument rotss scale start-pitch mint-or-intss durs ctrlss)
+  (-> instr? (non-empty-listof (non-empty-listof exact-integer?)) Scale? pitch/c maybe-interval-or-intervalss/c durationss/c controlss/c (non-empty-listof voice/c))
+  (define (transpose xss)
+    (apply map list xss))
+  (let* ([voice-eventsss (transpose (map (lambda (rots) (build-voice-eventss-for-rots rots scale start-pitch mint-or-intss durs ctrlss)) rotss))]
+         [voice-eventss (map (lambda (vess) (apply append vess)) voice-eventsss)]
+         [pans (voice-cnt->pan-distrib (length (car rotss)))])
+    (map (lambda (voice-events pan) (SplitStaffVoice instrument pan voice-events)) voice-eventss pans)))
+
+#;(define (gen-simple-score)
+  (parameterize ((tempo/param (TempoDur 'Q 100))
+                 (instr/param 'Marimba))
+    (let* ([rots          '(0 4 8)]
+           [start-pitch   (cons 'C '0va)]
+           [mint-or-intss '(4 5 2 -2 1 (-3 -3) -4 9 -7 #f 6 -6 -3 1 3 #f -3 -4 9 -7 6 (-3 -3) -3 1 3 #f -3)]
+           [durss         '((E) (S) (S) (E.) (S) (E) (S) (S) (S))]
+           [ctrlss        '((Accent) () () ())]
+           [voices        (build-voices (instr/param) rots (scale/param) start-pitch mint-or-intss durss ctrlss)])
+      (gen-score-file (score/parameterized voices)))))
+
+;; rots start widely spread apart, converge to unit spacing, diverge
+;; a) make mint-or-intsss with two existing sequences where second jumps up a third on high notes, associate with collection of rotss
+;; b) three busy voices is enough, have fourth be vibes extracting chords to ring with pedal down always, maybe with two adjacent slices for a chord?
+;; c) post-processing for repetition of sub-sections, longer reps with shorter segments
+;;
+;; this is pretty randomly contrived, not much of a tune - try motivic segments to randomly sequence with random repeats, different starting pitches?
+#;(define (gen-compound-score)
+  (parameterize ((tempo/param (TempoDur 'Q 100))
+                 (instr/param 'Marimba))
+    (let* ([rotss          '((0 5 10 15) (0 4 8 12) (0 3 6 9) (0 2 4 6) (0 1 2 3) (0 1 2 3) (0 2 4  6) (0 3 6 9) (0 4 8 12) (0 5 10 15))]
+           [start-pitch    (cons 'C '0va)]
+           [mint-or-intss1 '(4 5 2 -2 1 (-3 -3) -4 9 -7 #f 6 -6 -3 1 3 #f -3 -4 9 -7 6 (-3 -3) -3 1 3 #f -3)]
+           #;[mint-or-intss2 '(4 5 2 -2 1 (-3 -3) -4 (9 3) -7 #f (6 3) -6 -3 (-3 -3) 3 #f -3 -4 (9 6) #f -7 (6 5) (-3 -3) -3 1 3 #f -3)]
+           [durss          '((E) (S) (S) (E.) (S) (E) (S) (S) (S) (E) (E))]
+           [ctrlss         '((Accent) () () () (Accent) ())]
+           [voices         (build-multi-rots-voices (instr/param) rotss (scale/param) start-pitch mint-or-intss1 durss ctrlss)])
+      (gen-score-file (score/parameterized voices)))))
+
+;; this is best, use for derived texture, two choirs maybe or segment mint-or-intss to motifs, have them play out
+;; with repeated rotss, get reich-like ostinatos
+#;(define (gen-compound-score-2)
+  (parameterize ((tempo/param (TempoDur 'Q 100))
+                 (instr/param 'Marimba))
+    (let* ([rotss          '((0 4 8 12 16) (0 4 8 12 16))]
+           [start-pitch    (cons 'C '0va)]
+           [mint-or-intss1 '(4 1 5 1 2 -2 1 (-3 -3) (1 -3) -4 #f 9 9 9 4 1 5 1 2)]
+           [durss          '((E) (S) (S) (E) (E))] ;; 
+           [ctrlss         '((Accent) () () () (Accent) ())]
+           [voices         (build-multi-rots-voices (instr/param) rotss (scale/param) start-pitch mint-or-intss1 durss ctrlss)])
+      (gen-score-file (score/parameterized voices)))))
+
+;; isolate three motifs from mint-or-intss1
+(define motifs '((4 1 5 1 2) (-2 1 (-3 -3) (1 -3) -4) (#f 9 9 9) (4 1 5 1 2)))
+
+;; all permutations of list of motif
+(define motifs-perm (map (lambda (motifss) (apply append motifss)) (permutations motifs)))
+
+;; mint-or-intss1 '(4 1 5 1 2 -2 1 (-3 -3) (1 -3) -4 #f 9 9 9 4 1 5 1 2)]
+
+;; the same but different:  repetition of score-2 texture has shorter period, is regular, drifts to background
+;; here things drift in and out without the regularity, there's still repetition but the period is diffuse, longer
+(define (gen-compound-score-3)
+  (parameterize ((tempo/param (TempoDur 'Q 100))
+                 (instr/param 'Marimba))
+    (let* ([rotss          '((0 4 8 12 16) (0 4 8 12 16))]
+           [start-pitch    (cons 'C '0va)]
+           [mint-or-intss1 (apply append motifs-perm)]
+           [durss          '((E) (S) (S) (E) (E))]
+           [ctrlss         '((Accent) () () () (Accent) ())]
+           [voices         (build-multi-rots-voices (instr/param) rotss (scale/param) start-pitch mint-or-intss1 durss ctrlss)])
+      (gen-score-file (score/parameterized voices)))))
+
+;; try blending choirs, stagger arrival of second choir with voice-by-voice blend,
+;; contrasting pitch/harmony begin with sharp punctuation, extending to continuous,
+;; sixths and thirds, bracketing range above treble, below bass
+
+;; this is familiar:  hack out some list of intervals, add some random rhythms and accents, supply a reasonable number of voices
+;; and the imitative process falls out into something sort of listenable, then play around with distance between the voices and
+;; expanding the range, use marimbas and there you are
+
+;; the thing I've never done is to try different interval patterns to see if I can orient the harmonies or extract rhythms, something
+;; to give a recognizable shape or character
+
+;; or consider explicitly growing a texture:
+;; - quiet unison reps at say 11 to measure, no accents, soft; three voices imitative at short distance say 2,
+;;   imitation is inaudible to start, 
+;; - add accents cumulatively:  1 2 ..; start shifting imitative distance
+;; - add intervals on accents and maintain accents, use chromatic scale, grow list of intervals one-by-one until all accents have interval
+;;   make tight harmony, span less than octave with room to grow
+;; - ...
+
+;; length of rotations gives count of voices, denom of time-sig gives note duration, num-bars gives total length
+#;(define/contract (gen-rhythm-choir rotations time-sig scale start-pitch interval num-bars)
+  (-> (listof exact-nonnegative-integer?) TimeSignatureSimple? Scale? pitch/c interval/c positive? (non-empty-listof (non-empty-listof voice-event/c)))
+  (let* ([one-bar     (TimeSignatureSimple-num time-sig)]
+         [note-dur    (TimeSignatureSimple-denom time-sig)]
+         [cnt-notes   (* num-bars one-bar)]
+         [pitch       (xpose scale (scale->pitch-range-pair scale) start-pitch interval)]
+         [pitch-class (car start-pitch)]
+         [octave      (cdr start-pitch)]
+         [notes       (make-list cnt-notes (Note pitch-class octave note-dur '() #f))])
+    (make-list (length rotations) notes)))
+
+#;(define (gen-rhythm-score voice-eventss)
+  (parameterize ((tempo/param (TempoDur 'Q 100))
+                 (instr/param 'Marimba)
+                 (time-signature/param (TimeSignatureSimple 11 'E)))
+    (let* ([pans (voice-cnt->pan-distrib (length voice-eventss))]
+           [voices (map (lambda (voice-events pan) (SplitStaffVoice (instr/param) pan voice-events)) voice-eventss pans)])
+      (gen-score-file (score/parameterized voices)))))
+
+;; canon-workspace.rkt> (define voice-eventss (gen-rhythm-choir '(1 1 1) (TimeSignatureSimple 11 'E) chromatic-sharps '(C . 0va) -3 2))
+;; canon-workspace.rkt> (gen-rhythm-score voice-eventss)

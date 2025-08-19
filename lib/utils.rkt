@@ -58,8 +58,10 @@
   ;; [inits (-> (listof any/c) any/c)]
 
   ;; compress input list to 2 * count with retrograde at midpoint
-  (squash-to-retro (-> exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c)))
-  
+  [squash-to-retro (-> exact-positive-integer? (non-empty-listof any/c) (non-empty-listof any/c))]
+
+  ;; blend item-by-item from head of second list replacing item-by-item in first list from end
+  [blend-from-back (-> (non-empty-listof any/c) (non-empty-listof any/c) (non-empty-listof (non-empty-listof any/c)))]
   ))
 
 (require (only-in algorithms scanl))
@@ -297,3 +299,23 @@
   (require rackunit)
   (check-equal? (squash-to-retro 3 '(1 2 3 4 5 6)) '(1 2 3 4 3 2)))
 
+;; (1 2 3 4) (a b c d) => ((1 2 3 a) (1 2 a b) (1 a b c) (a b c d))
+;; - first 3 of (1 2 3 4) and last 1 of (a b c d)
+;; - first 2 of (1 2 3 4) and last 2 of (a b c d)
+;; - first 1 of (1 2 3 4) and last 3 of (a b c d)
+;; - first 0 of (1 2 3 4) and last 4 of (a b c d)
+(define (blend-from-back orig new)
+  (let ([m (min (length orig) (length new))])
+    (map (lambda (n) (append (take orig (- m n)) (take new n))) (range 1 (add1 m)))))
+
+(module+ test
+  (check-equal?
+   (blend-from-back '(1 2 3 4) '(a b c d))
+   '((1 2 3 a) (1 2 a b) (1 a b c) (a b c d)))
+  (check-equal?
+   (blend-from-back '(1 2 3 4) '(a b))
+   '((1 a) (a b)))
+  (check-equal?
+   (blend-from-back '(1 2 3 4) '(a b c d e f))
+   '((1 2 3 a) (1 2 a b) (1 a b c) (a b c d)))
+  )

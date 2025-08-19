@@ -18,8 +18,12 @@
   ;; state becomes 'done, nested generators are pitch-or-f, duration, accent-or-f
   [note-or-rest/generator (-> generator? generator? generator? generator?)]
  
-  ;; inifinite generator of num-denom pair(s) from time-signature
+  ;; infinite generator of num-denom pair(s) from time-signature
   [time-signature->num-denom/generator (-> time-signature/c generator?)]
+  
+  ;; unified infinite generator of num-denom pair(s) from time-signature,
+  ;; with grouping and compound time signatures aggregated together
+  [time-signature->aggregate-num-denom/generator (-> time-signature/c generator?)]
 
   ;; infinite generator of random pick from listof any/c based on relative weights
   [weighted-list-element/generator (-> (non-empty-listof (list/c relative-weight/c any/c)) generator?)]
@@ -79,6 +83,8 @@
 
 (require lily-gen/lib/score)
 
+(require lily-gen/lib/score-utils)
+
 (require lily-gen/lib/scale)
 
 (require lily-gen/lib/utils)
@@ -129,6 +135,24 @@
                                     (map (lambda (num) (cons num denom)) nums)))
                                 nums-denoms)])
        (sequence->repeated-generator (apply append num-denom-prs)))]))
+
+;; generator to find common end-of-measure including for compound and grouping time signatures
+(define (time-signature->aggregate-num-denom/generator timesig)
+  (match timesig
+    ;; TimeSignatureSimple is just a single-item list of a num denom pair
+    [(TimeSignatureSimple num denom)
+     (sequence->repeated-generator (list (cons num denom)))]
+    ;; TimeSignatureGrouping is a list of nums, a total for nums, and a denom
+    ;; so aggregate is just pair tot denom
+    [(TimeSignatureGrouping _ tot denom)
+     (sequence->repeated-generator (list (cons tot denom)))]
+    ;; TimeSignatureCompound is a list of list with each inner list
+    ;; a (*list/c natural-number/c denom-duration?)
+    ;; e.g. one or more natural-number/c and a denom-duration?
+    ;; where denom-duration? is the denominator e.g. 3/8 + 4/4
+    [(TimeSignatureCompound nums-denom-lists)
+     (let ([barlen (apply + (map nums-denom-list->barlen nums-denom-lists))])
+       (sequence->repeated-generator (list (cons barlen 'HTE))))]))
 
 ;; (-> (non-empty-listof (list/c relative-weight/c any/c)) generator?)
 (define (weighted-list-element/generator weight&element-prs)

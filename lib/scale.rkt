@@ -63,6 +63,8 @@
  ;; - - - - - - - - -
  ;; Utilities
  (contract-out
+  [scale->c-ordering (-> Scale? Scale?)]
+   
   [octatonic-whole-scale (-> pitch-class? Scale?)]
   
   [octatonic-half-scale (-> pitch-class? Scale?)]
@@ -150,8 +152,13 @@
 
 (require (only-in lily-gen/lib/unfold iterate-list-comprehension-sum))
 
+;; TBD: allow flat/sharp, double-flat/double-sharp annotations for accidentals
+;; Means stripping annotation for interval relative to Scale, then applying
+;; annotation to resulting pitch before answering result of transposition,
+;; means crawling list of enharmonic quarter-tone based chromatic scale, ugh
+
 (define interval/c
-  (make-flat-contract #:name 'interval/c #:first-order exact-integer?))
+  (make-flat-contract #:name 'interval/c #:first-order (or/c exact-integer? (cons/c exact-integer? accidental?))))
 
 (define intervals/c
   (make-flat-contract #:name 'intervals/c #:first-order (non-empty-listof interval/c)))
@@ -240,11 +247,106 @@
 
 (define (octatonic-half-scale root) (octatonic-scale root octatonic-half-pitch-classes-list))
 
+;; things get complicated with quarter tone accidentals
+;; so e.g. D + h => Dh but Dh + h => Ds, Dl + l => D, Dl + f => Dfl
+;; for now, throw an error on quarter-tone accidentals
+
+;; watch out, because a natural just cancels the accidental on the
+;; current pitch so it could be range from -4 -2 +2 +4 offsets depending
+;; on what comes before and if there's no accidental on the current
+;; pitch it should really be an error
+
+;; steps:
+;; 1) analyze accidental and throw an error if it's a quarter tone,
+;;    e.g. it's not one of ff f n s ss
+;; 2) if accidental is n
+;       - verify source has an accidental (not just one char)
+;;      - strip source accidental and answer root by itself
+;;    else
+;;      - convert source and accidental to integer counts -2 -1 1 2 and sum
+;;      - verify result is not > 2 or < -2
+;;      - append ff f s ss to source pitch
+
+(define accidental-2-count-hash (make-hash (map cons '(ff f s ss) '(-2 -1 1 2))))
+
+(define (accidental->count acc)
+  (hash-ref accidental-2-count-hash acc))
+
+(define count-2-accidental-hash (make-hash (map cons '(-2 -1 1 2) '(ff f s ss))))
+
+(define (count->accidental cnt)
+  (hash-ref count-2-accidental-hash cnt))
+
+(define (pitch-class-str->accent-cnt pcs)
+  (if (= 1 (string-length pcs))
+      0
+      (let ([pc-acc (string->symbol (list->string (cdr (string->list pcs))))])
+        (accidental->count pc-acc))))
+
+;; don't allow quarter tones
+(define allowed-accidentals '(ff f n s ss))
+
+;; Too squirrely, simplify?
+(define/contract (apply-accidental pc acc)
+  (-> pitch-class? accidental? pitch-class?)
+  (when (not (member acc allowed-accidentals))
+    (error 'apply-accidental "accidental: ~v is not one of allowed accidentals: ~v" acc allowed-accidentals))
+  (let* ([pcs (symbol->string pc)]
+         [pch (string (car (string->list pcs)))])
+    (if (symbol=? acc 'n)
+        (begin
+          (when (= 1 (string-length pcs))
+            (error 'apply-accidental "natural accidental applied to pitch class with no accidental: ~v" pc))
+          (string->symbol pch))
+        (let* ([acc-cnt (accidental->count acc)]
+               [pc-cnt  (pitch-class-str->accent-cnt pcs)]
+               [tot-cnt (+ acc-cnt pc-cnt)])
+          (when (or (< tot-cnt -2) (> tot-cnt 2))
+            (error 'apply-accidental "accidental ~v applied to pitch ~v is < -2 or > 2: ~v" acc pc tot-cnt))
+          (if (zero? tot-cnt)
+              (string->symbol pch)
+              (let ([accs (symbol->string (count->accidental tot-cnt))])
+                (string->symbol (string-append pch accs))))))))
+
+;;  (make-flat-contract #:name 'interval/c #:first-order (or/c exact-integer? (cons/c exact-integer? accidental?))))
+
+(define/contract (maybe-strip-accidental interval)
+  (-> interval/c interval/c)
+  (match interval
+    [(? exact-integer? interval)
+     interval]
+    [_ (car interval)]))
+
 ;; used to order diatonic scale pitch classes ascending pitch-class
 ;; closest to C to match groupings on keyboard which in turn matches
 ;; octaves in lilypond
 (define c-ordered-enharmonic-pitch-class-symss
- '((Bs  C  Dff)
+  '((Bs  C   Dff)
+    (Bsh Ch  Dfl)
+    (Bss Cs  Df)
+    (Csh Dl)
+    (Css D  Eff)
+    (Dh  Efl)
+    (Ds  Ef Fff)
+    (Dsh El Ffl)
+    (Dss E  Ff)
+    (Eh  Fl)
+    (Es  F  Gff)
+    (Fh  Gfl)
+    (Ess Fs Gf)
+    (Fsh Gl)
+    (Fss G  Aff)
+    (Gh  Afl)
+    (Gs  Af)
+    (Gsh Al)
+    (Gss A  Bff)
+    (Ah  Bfl)
+    (As  Bf Cff)
+    (Ash Bl)
+    (Ass B  Cf)
+    (Bh  Cl)))
+
+ #;'((Bs  C  Dff)
    (Bss Cs  Df)
    (Css D  Eff)
    (Ds  Ef Fff)
@@ -255,7 +357,7 @@
    (Gs  Af)
    (Gss A  Bff) 
    (As  Bf Cff) 
-   (Ass B  Cf)))
+   (Ass B  Cf))
 
 (define fifths-ordered-pitch-class-syms
   '(Fff Cff Gff Dff Aff Eff Bff 
@@ -359,8 +461,7 @@
   (index-where c-ordered-enharmonic-pitch-class-symss (lambda (enh-syms) (member pitch-class enh-syms))))
 
 ;; order pitch classes in a scale for transposition relative to C octaves for lilypond notation
-(define/contract (scale->c-ordering scale)
-  (-> Scale? Scale?)
+(define (scale->c-ordering scale)
   (Scale (sort (Scale-pitch-classes scale) < #:key pitch-class->chromatic-enharmonic-index)))
 
 (define/contract (scale->fifths-ordering scale)
@@ -456,9 +557,16 @@
 ;; TBD: raw transpose without ranges, only errors if
 ;; - pitch isn't in scale
 ;; - sum of pitch index and interval is negative
-(define/contract (xp scale pitch interval)
+;; Looks like it's used nowhere
+#;(define/contract (xp scale pitch interval)
   (-> Scale? pitch/c interval/c pitch/c)
-  (index->pitch scale (+ (pitch->index scale pitch) interval)))
+  (match interval
+    [#f
+     #f]
+    [(cons int acc)
+     (apply-accidental (xp scale pitch int) acc)]
+    [(var int)
+     (index->pitch scale (+ (pitch->index scale pitch) int))]))
 
 ;; (-> Scale? pitch-range-pair/c pitch/c exact-integer? maybe-pitch/c)
 (define (xpose scale pitch-range-pair pitch interval)
@@ -475,25 +583,40 @@
   (match maybe-interval-or-intervals
     [#f ;; input is #f so output #f is interpreted as a rest
      #;(printf "#f\n")
-     #f] 
-    [(cons first-interval rest-intervals) ;; input is chord, xpose root, then rest of chord from root
+     #f]
+    ;; check list before cons
+    [(list first-interval rest-intervals ...) ;; input is chord, xpose root, then rest of chord from root
      (let* ([root (transpose/unguarded scale pitch pitch-range-pair first-interval)]
             [chord (cons root (map (curry transpose/unguarded scale root pitch-range-pair) rest-intervals))])
        #;(printf "first-interval: ~v rest-intervals: ~v\n" first-interval rest-intervals)
        #;(printf "root: ~v chord: ~v\n" root chord)
        chord)]
-    [(var maybe-interval) ;; input is single interval
+    [(cons interval accidental) ;; contract guarantees (cons interval/c accidental?)
+     (let ([pitch (transpose/unguarded scale pitch pitch-range-pair interval)])
+       (cons (apply-accidental (car pitch) accidental) (cdr pitch)))]
+    [(var interval) ;; input is single interval
      (let* ([pitch-idx (pitch->index scale pitch)]
-            [pitch-off (+ pitch-idx maybe-interval)])
+            [pitch-off (+ pitch-idx interval)])
        (if (or (< pitch-off 0) (> pitch-off (scale->max-idx scale)))
-           (error 'transpose/unguarded "transposition ~v for pitch idx ~v to ~v exceeds max range" maybe-interval pitch-idx pitch-off)
-           (let ([xposed-pitch (index->pitch scale (+ pitch-idx maybe-interval))])
+           (error 'transpose/unguarded "transposition ~v for pitch idx ~v to ~v exceeds max range" interval pitch-idx pitch-off)
+           (let ([xposed-pitch (index->pitch scale (+ pitch-idx interval))])
              (if (pitch-in-range? pitch-range-pair xposed-pitch)
                  (begin
-                   #;(printf "single interval ~v tranposed ~v\n" maybe-interval xposed-pitch)
+                   #;(printf "single interval ~v tranposed ~v\n" interval xposed-pitch)
                    xposed-pitch
                    )
                  (error 'transpose/unguarded "transposed pitch ~v failed range check ~v" xposed-pitch pitch-range-pair)))))]))
+
+;; add only interval on LHS to interval on RHS,
+;; cannot carry accidental on RHS to result as it's just a number,
+;; relies on 
+(define (add-next-interval a b)
+  (let* ([a-num (maybe-strip-accidental a)]
+         [b-num (maybe-strip-accidental b)]
+         [c-num (+ a-num b-num)])
+    (if (pair? b)
+        (cons c-num (cdr b))
+        c-num)))
 
 ;; converts list of successive intervals into absolute intervals
 ;; LHS  RHS
@@ -501,32 +624,31 @@
 ;; list item => take first element from LHS and sum with item on RHS
 ;; item list => sum itm from LHS against all elementson RHS
 ;; item item => sum two items as ordinary +
+;; Be careful to preserve accidentals.
 (define (list-sum rhs lhs)
   #;(printf "list-sum lhs: ~v rhs: ~v\n" lhs rhs)
   (cond
     [(or (not lhs) (not rhs)) ;; redundant when op for carry-op-maybe
      #;(printf "list-sum #f #f  ~v ~v => #f\n" rhs lhs)
      #f]
+    
     [(and (list? lhs) (list? rhs))
      #;(printf "list-sum #t #t ~v ~v => ~v\n" rhs lhs (cons (+ (first lhs) (car rhs)) (cdr rhs)))
      (cons (+ (first lhs) (car rhs)) (cdr rhs))]
+    
     [(and (list? lhs) (not (list? rhs)))
      #;(printf "list-sum #t #f ~v ~v => ~v\n" rhs lhs (+ (car lhs) rhs))
-     (+ (car lhs) rhs)]
+     (add-next-interval (car lhs) rhs)]
     ;;;
     [(and (not (list? lhs)) (list? rhs))
      #;(printf "list-sum #f #t ~v ~v => ~v\n" rhs lhs (cons (+ lhs (car rhs)) (cdr rhs)))
-     (cons (+ lhs (car rhs)) (cdr rhs))]
+     (cons (add-next-interval lhs (car rhs)) (cdr rhs))]
+    
     [else
      #;(printf "list-sum else ~v ~v => ~v\n" rhs lhs (+ lhs rhs))
-     (+ lhs rhs)]))
+     (add-next-interval lhs rhs)]))
 
-;; bug: only transposes chord when *first* element in maybe-interval-or-intervalss is a list
-;;      and then it repeats that chord with each successive transposition
-;;      forgets chords inside of list
-;; correct behavior is to take starting pitch and apply each of maybe-interval-or-intervalss
-;; but (scanl (carry-op-maybe list-sum) maybe-interval-or-intervalss) swallows 
-
+;; TBD: get rid of this and eliminate a whole bunch of complicated code!
 ;; (-> Scale? pitch-range-pair/c pitch/c (non-empty-listof maybe-interval-or-intervals/c) (non-empty-listof maybe-pitch-or-pitches/c))]
 (define (transpose/successive scale pitch-range-pair pitch maybe-interval-or-intervalss)
   (when (not (pitch-range-pair&pitch-in-scale? scale pitch-range-pair pitch))
@@ -584,8 +706,22 @@
 (module+ test
   (require rackunit)
   (check-equal?
+   
    (transpose/successive C-major (scale->pitch-range-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
    '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (G . 15vb)))
+   
+  (check-equal?
+   (transpose/successive C-major (scale->pitch-range-pair C-major) (cons 'C '0va) `(0 -1 -2 -3 ,(cons -4 's)))
+   '((C . 0va) (B . 8vb) (G . 8vb) (D . 8vb) (Gs . 15vb)))
+  
+  (check-equal?
+   (transpose/absolute C-major (scale->pitch-range-pair C-major) (cons 'C '0va) '(0 -1 -2 -3 -4))
+   '((C . 0va) (B . 8vb) (A . 8vb) (G . 8vb) (F . 8vb)))
+   
+  (check-equal?
+   (transpose/absolute C-major (scale->pitch-range-pair C-major) (cons 'C '0va) `(0 -1 -2 -3 ,(cons -4 's)))
+   '((C . 0va) (B . 8vb) (A . 8vb) (G . 8vb) (Fs . 8vb)))
+  
   (check-exn exn:fail? (lambda () (xpose C-major (cons 'C '0va) 1000)))
   (for-each (lambda (sc)
               (for-each (lambda (n) (check-equal? n (pitch->index sc (index->pitch sc n))))

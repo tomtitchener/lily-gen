@@ -42,9 +42,9 @@
     "ais"   "bes" "ceses"
     "aisis" "b"   "ces"))
 
-(define sym-pitch-hash (make-hash (map cons pitch-class-syms pitch-lily-strings)))
+#;(define sym-pitch-hash (make-hash (map cons pitch-class-syms pitch-lily-strings)))
 
-(define (pitch-class-1->lily pitch)
+#;(define (pitch-class-1->lily pitch)
   (hash-ref sym-pitch-hash pitch))
 
 ;; rules:

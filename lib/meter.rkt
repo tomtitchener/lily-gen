@@ -113,6 +113,10 @@
 ;; given time-signature, duration total so far (tot-curlen) and duration total to add (tot-addlen)
 ;; answer list of durations that fill tot-addlen with respect to the current beat and bar length
 ;; 1) convert the meter or meters in time-signature to a cycle of num denom pairs for simple time sigs
+;;    BUG:  time-signature->num-denom/generator breaks grouping and compound time signatures into
+;;          individual bars of different time signatures, so that voice one may end on the second
+;;          beat of a 4 4 time-signature and voice two on beat 1 of a 6 8 time signature, so the
+;;          amounts to fill the end of the measures are different
 ;; 2) advance cycle past tot-curlen to current bar, answer dur len from start of current bar
 ;;   (spill-len, may be 0)
 ;; 3) compute durlen from spill-len to end of first bar (rem-bar)
@@ -122,13 +126,13 @@
 ;;    bar until remaining addlen goes to zero (succ-durs)
 (define/contract (add-end-durs-for-time-signature time-signature tot-curlen tot-addlen)
   (-> time-signature/c natural-number/c natural-number/c (listof duration?))
-  (let* ([num-denom-gen (time-signature->num-denom/generator time-signature)]             ;; 1
-         [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]        ;; 2
+  (let* ([num-denom-gen (time-signature->aggregate-num-denom/generator time-signature)]  ;; 1
+         [spill-len     (advance-num-denom-gen-to-start num-denom-gen tot-curlen)]       ;; 2
          [num-denom-pr  (num-denom-gen)]
-         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)]                ;; 3
-         [init-addlen   (min tot-addlen rem-bar)]                                         ;; 4
-         [init-durs     (add-end-durs-for-num&denom num-denom-pr spill-len init-addlen)]  ;; 5
-         [succ-durs     (let inner ([rem-addlen (- tot-addlen init-addlen)])              ;; 6
+         [rem-bar       (- (num-denom-pr->barlen num-denom-pr) spill-len)]               ;; 3
+         [init-addlen   (min tot-addlen rem-bar)]                                        ;; 4
+         [init-durs     (add-end-durs-for-num&denom num-denom-pr spill-len init-addlen)] ;; 5
+         [succ-durs     (let inner ([rem-addlen (- tot-addlen init-addlen)])             ;; 6
                           (if (zero? rem-addlen)
                               '()
                               (let* ([num-denom-pr (num-denom-gen)]

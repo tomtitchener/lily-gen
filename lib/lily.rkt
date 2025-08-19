@@ -205,9 +205,9 @@
     (format "\\time ~a ~a/~a" (string-join (map number->string groups) ",") num (duration->lily denom))))
 
 (define/contract (numdenompr->lily pr)
-  (-> num-denom/c string?)
-  (let ([num (car pr)]
-        [den (cdr pr)])
+  (-> (*list/c natural-number/c duration?) string?)
+  (let ([num (first pr)]
+        [den (second pr)])
     (format "(~a ~a)" num (duration->lily den))))
 
 (define/contract (time-signature-compound->lily time-signature)

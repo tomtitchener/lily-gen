@@ -7,6 +7,7 @@
 (require lily-gen/lib/score)
 (require lily-gen/lib/scale)
 (require lily-gen/lib/pan-utils)
+(require lily-gen/lib/generators)
 
 ;; first, just create a quarter tone scale up and down to see this looks right and sounds right
 
@@ -241,10 +242,136 @@
 ;; Interrupt the channel in mid-playback and you may get some wacky effects when you restart, lasting for duration of Logic session.
 
 ;; Also, dynamics aren't reliable, for example, swell to fff followed by a new attack on fff comes much louder the second time.
-;; Lilypond says suppored dynamic range is ppppp to fffff, but ppppp isn't really soft.  Will need post-processing in Logic to
-;; temper dynaics by instrument section.
+;; Lilypond says suppored dynamic range is ppppp to fffff, but ppppp isn't really soft.  Will need post-processing in Logic to;
+; temper dynaics by instrument section.
 
 ;; 1 3 5 6 8 9 11 12 13 15
 ;; flute, flute, flute, clarinet, clarinet, clarinet, english horn, english horn, bassoon, bassoon
 
 ;; 2 4 6 7 9 10 12 14 16
+
+;; routine to randomly walk over interval sequence
+;;
+;; - target is short phrases with longer rests between growing irregularly to longer phrases with shorter
+;;   breaks that starts growing by adding to the previous phrase in bits until I reach a target length
+;;   (approximate) at which point I drop from the the beginning of the pattern and add to the end, but
+;;   also in irregular chunks so the total duration remains approximately as is, a little shorter or a
+;;   little longer
+;;
+;; - range should wander while staying within limits, aggregate bits can include a rest but should always
+;;   end in a note, so amount to grow / shrink should be relative to total length of previous snippet
+;;
+;; - snippet segments should be expressive, using accents, durations, and rests - maybe vary repetition
+;;   of segments adding or removing dynamics, replacing some notes with rests, or reversing snippet
+;;   segments
+;;
+;; - should be murmering patter less of a wall of sound than bittersweet chorus, with sour flavor of
+;;   overtone series when I add bass voice swells, eventual shifting of harmony to adjacent tonal 
+;;   centers by common upper overtones, ultimately a master generator to bring voices within two
+;;   groups together internally, then the two together
+;;
+;; - take pitch classes from overtones 9 - 16 from a fundamental of C (D - C) as a scale with 8 elements
+;;
+;; - have solo voices in overlapping range:  flute, oboe, clarinet, horn.  The flute can cover the top two
+;;   octaves.  The oboe goes from Bbb below middle C and up two octaves.  The clarinet goes two octaves from 
+;;   E below middle C and up.  The horn covers the two octaves starting from the octave below middle C.
+;;   Real flute and oboe don't do quarter tones at all, clarinet and horn a little more, so this is all fake.
+;;
+;; - have generators for: note vs. rest, interval, duration, accent with initial weights and starting pitch:
+;;
+;;   * generators have access to a sliding window of e.g the previous 10 notes-or-rests and adjust the weights
+;;     for each iteration based on a score of the parameter (rest, interval, duration, accent) from those
+;;     notes-or-rests (or maybe the master generator for all manages the list between iterations)
+;;     but wait, see note-or-rest/generator, which seems to give me what I want, though each inner generator
+;;     will have to manage history for its own parameter e.g. duration or accent
+;;
+;;   * interval gives range negative - positive for current position in range with weights initially
+;;     set to prefer short hops, range reflects position of current or most recent pitch so if flute starts
+;;     at C above middle C, range is -8..0..8 to cover two octaves, but if next note is up one to D, then
+;;     the range shifts -9..0..7 and weights shift to favor return to center - except I don't want to skip
+;;     more than say up or down a fourth, which limits the number of weights to 9 including no skip, though
+;;     I have to take upper and lower limits in mind so that if as I approach the boundary the weights favor
+;;     skipping in the other direction - 
+;;
+;; - top 10 or 11 pitches have small intervals, could have short segments strung together with rests in between,
+;;   heuristics to determine duration, rest vs. note, interval direction +/-, interval size using sliding window
+;;   with history of say previous 5 events?
+;;
+;; - or consider something completely different, like seeding each voice with a one or two example snippets and
+;;   extending from there based on what's come before
+;;
+;; - first review motifs.rkt, which already approaches a lot of these ideas, then break it down to smaller pieces
+;;
+
+;; Just to get started from somewhere, consider weighted-maybe-intervalss-motifs/generator, where I supply a list
+;; of motifs, probably FixedPitchMaybeIntervalsMotif and TupletMaybeIntervalsMotif
+;;
+;; Then spread those over a list of solo voices with short, quiet motifs, varying lengths and preceding and following
+;; rests and then tackle swells in second chorus (note: I believe FixedPitch motifs won't transpose successively)
+;;
+
+;; first the flute starting at C an octave above middle C, these are to be randomly sequenced by weight
+;; all will use "Scale" of last octave of overtone series, range of voice is two octaves
+
+(define mur-ints1 (list '(#f ()               (E))  ;; RE DE DE EE RQ CE DE RQ (no quarter tones)a
+                        '(1  (SlurOn)         (E))   
+                        '(0  ()               (E))
+                        '(1  (Accent SlurOff) (E))
+                        '(#f ()               (Q))
+                        '(-2 (Accent SlurOn)  (E))
+                        '(1  (SlurOff)        (E))
+                        '(#f ()               (Q))))
+
+(define mur-ints2 (list '(#f ()               (E.))  ;; RE. BblS GE RS GflS ES EflS Es
+                        '(6  (SlurOn)         (S))
+                        '(-2 (Accent SlurOff) (E))
+                        '(#f ()               (S))
+                        '(-1 (Accent SlurOn)  (S))
+                        '(2  ()               (S))
+                        '(-2 (Accent)         (S))
+                        '(2  (SlurOff)        (S))))
+
+(define mur-ints3 (list '(#f ()               (Q))  ;; RQ EQ BblS CS BblS CS RQ
+                        '(2  (SlurOn)         (Q))
+                        '(-4 (Accent)         (S))
+                        '(2  ()               (S))
+                        '(-2 ()               (S))
+                        '(2  (SlurOff)        (S))
+                        '(#f ()               (Q))))
+
+(define (mur-mots start)
+  (list (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints1))
+        (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints2))
+        (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints3))))
+
+(define mur-mots-hi (mur-mots '(C . 8va)))
+
+(define mur-mots-med (mur-mots '(G . 0va)))
+
+(define mur-mots-lo (mur-mots '(D . 0va)))
+
+(define top-octave-scale (Scale  (take (drop (map car (make-harmonic-pitches 'C '15vb)) 7) 8)))
+
+(define mur-mots-hi/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 8va) mur-mots-hi))
+  
+(define mur-mots-med/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(G . 0va) mur-mots-med))
+
+(define mur-mots-lo/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 0va) mur-mots-lo))
+
+(define length<=? (lambda (m) (sum<=? (lambda (_) 1) m)))
+
+(define (score-mots) (parameterize ((time-signature/param (TimeSignatureSimple 4 'Q))
+                                    (tempo/param (TempoDur 'Q 80))
+                                    (instr/param 'Flute))
+                       (let* ([mur-notes-hi (flatten (while/generator->list (length<=? 10) mur-mots-hi/g))]
+                              [mur-notes-med (flatten (while/generator->list (length<=? 10) mur-mots-med/g))]
+                              [mur-notes-lo (flatten (while/generator->list (length<=? 10) mur-mots-lo/g))]
+                              [voice-hi (PitchedVoice 'Flute 'PanLeft  (cons 'Treble  mur-notes-hi))]
+                              [voice-med (PitchedVoice 'Flute 'PanCenter (cons 'Treble mur-notes-med))]
+                              [voice-lo (PitchedVoice 'Clarinet 'PanRight (cons 'Treble mur-notes-lo))])
+                         (gen-score-file (score/parameterized (list voice-hi voice-med voice-lo))))))
+
+;; a failed experiment, twing-y sour sound is icky - looking back at Dennehy's Winter piece I can see and hear harmonies rooted
+;; in octaves, fifths, and major thirds with careful blending in of high overtones against supporting tonal context so quarter
+;; tones are color, with some step-over / step-back harmonization and some standard 3rd or 6th tonal relations with "revealed"
+;; or "behold" effect from Romantics

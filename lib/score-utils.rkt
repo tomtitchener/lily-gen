@@ -17,6 +17,9 @@
   
   ;; multiply num  and duration->int for first and last elements of pair
   [num-denom-pr->barlen (-> num-denom/c natural-number/c)]
+  
+  ;; multiply num  and duration->int for first and last elements of pair
+  [nums-denom-list->barlen (-> (*list/c natural-number/c duration?) natural-number/c)]
 
   [ctrls-durs&pit->notes (-> (listof control/c) (non-empty-listof duration?) pitch/c boolean? (listof Note?))]
   
@@ -61,6 +64,12 @@
 ;; (-> num-denom/c natural-number/c)
 (define (num-denom-pr->barlen num-denom-pr)
   (* (car num-denom-pr) (duration->int (cdr num-denom-pr))))
+
+;; (-> (*list/c natural-number/c duration?) natural-number/c)
+(define (nums-denom-list->barlen nums-denom-list)
+  (num-denom-pr->barlen (cons
+                         (apply + (drop-right nums-denom-list 1))
+                         (last nums-denom-list))))
 
 (define (strip-accents ctrls)
   (filter (lambda (c) (not (accent? c))) ctrls))

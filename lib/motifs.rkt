@@ -53,6 +53,9 @@
  (contract-out
   [render-maybe-intervalss-motifs 
    (-> Scale? pitch/c maybe-intervalss-motifs/c (list/c maybe-pitch/c notes-motif/c))]
+
+  [render-abs-maybe-intervalss-motifs
+   (-> Scale? pitch/c (or/c maybe-intervalss-motif/c TupletMaybeIntervalsMotif? (non-empty-listof (or/c maybe-intervalss-motif/c TupletMaybeIntervalsMotif?))) notes-motif/c)]
    
   [weighted-maybe-intervalss-motifs/generator
    (-> Scale? pitch/c weight&maybe-intervalss-motifss/c generator?)]
@@ -85,7 +88,19 @@
   ;; tied become multiple-item lists, then call rotate-list-by & flatten
   [rotate-notes-motif-by
     (-> notes-motif/c exact-integer? notes-motif/c)]
-  
+
+  ;; internally, transposition is 0 based, e.g. 0 => unison, +/-1 one step up, one step down, etc.
+  ;; but historically the name for a single step up and down is a second and the name for identity
+  ;; as in 1 with respect to multiplication is unison, so it's easier when writing down an interval
+  ;; series to use 2, 3, 4, etc. for second, third, fourth etc.
+  ;; this routine squeees the traditional terms down so e.g. -1/1 becomes 0, 2,3.. become 1,2..,
+  ;; and -2,-3.. become -1,-2..
+  ;; note maybe-interval-or-intervalss/c includes #f for rests and a sub-list for chords, so it
+  ;; handles those, too
+  ;; the only illegal input value is 0
+  ;; note the definition of maybe-interval-or-intervalss/c does not allow nested lists
+  [squeeze-mint-or-intss 
+   (-> maybe-interval-or-intervals/c maybe-interval-or-intervals/c)]
  ))
 
 (require racket/generator)
@@ -190,7 +205,7 @@
 
 ;; given a previous starting-pitch and a list of maybe-intervalss-motif/c,
 ;; transpose maybe-intervalss into list of Rest? Note? or Chord? and answer
-;; the list with the final maybe-pitch from the list for the next motif 
+;; the list with the final maybe-pitch from the list for the next motif  
 (define/contract (render-maybe-intervalss-motif scale starting-pitch maybe-intervalss-motif-elements)
   (-> Scale? pitch/c maybe-intervalss-motif/c (list/c maybe-pitch/c (non-empty-listof (or/c Note? Chord? Rest?))))
   (define (accum-motifs maybe-pitch-or-pitches-motif motifs)
@@ -215,8 +230,8 @@
   (match motif
     [(FixedPitchMaybeIntervalsMotif starting-pitch motif)
      (match (render-maybe-intervalss-motif scale starting-pitch motif)
-       [(list _ motifs)
-        (list begin-pitch motifs)])]
+       [(list fixed-begin-pitch motifs)
+        (list fixed-begin-pitch motifs)])]
     [(FixedOctaveMaybeIntervalsMotif starting-octave motif)
      (match (render-maybe-intervalss-motif scale (cons (car begin-pitch) starting-octave) motif)
        [(list _ motifs)
@@ -229,6 +244,90 @@
      (match (render-maybe-intervalss-motif scale begin-pitch maybe-intervalss-motif)
        [(list maybe-pitch motifs)
         (list (or maybe-pitch begin-pitch) motifs)])]))
+
+;;(-> maybe-interval-or-intervalss/c maybe-interval-or-intervalss/c)
+(define (squeeze-mint-or-intss mints)
+  (match mints
+    [#f #f]
+    [(? list? mints)
+     (map squeeze-mint-or-intss mints)]
+    [i
+     (match i
+       [0 (error 'squeeze-mint-or-intss "illegal 0 val not in range [..-2,-1,1,2..]")]
+       [(? positive? i) (sub1 i)]
+       [i (add1 i)])]))
+
+(module+ test
+  (require rackunit)
+  (check-equal? (squeeze-mint-or-intss '(-1 -2 #f (-3 -2) 3 2 1)) '(0 -1 #f (-2 -1) 2 1 0))
+  (define intervals '(4 5 2 -2 1 -6 -4 9 -7 6 -6 -3 1 3 -3))
+  (check-equal?
+   (render-abs-maybe-intervalss-motifs C-major '(C . 0va) (map (lambda (i) (list i '() '(E))) (squeeze-mint-or-intss intervals)))
+   (list
+    (Note 'F '0va 'E '() #f)  ;  4
+    (Note 'G '0va 'E '() #f)  ;  5
+    (Note 'D '0va 'E '() #f)  ;  2
+    (Note 'B '8vb 'E '() #f)  ; -2
+    (Note 'C '0va 'E '() #f)  ;  1
+    (Note 'E '8vb 'E '() #f)  ; -6
+    (Note 'G '8vb 'E '() #f)  ; -4 
+    (Note 'D '8va 'E '() #f)  ;  9
+    (Note 'D '8vb 'E '() #f)  ; -7
+    (Note 'A '0va 'E '() #f)  ;  6
+    (Note 'E '8vb 'E '() #f)  ; -6
+    (Note 'A '8vb 'E '() #f)  ; -3 
+    (Note 'C '0va 'E '() #f)  ;  1
+    (Note 'E '0va 'E '() #f)  ;  3
+    (Note 'A '8vb 'E '() #f)  ; -3
+    )))
+
+;; NB: output can't be notes-motif/c because this doesn't return a Tuplet
+(define/contract (render-abs-maybe-intervalss-motif scale starting-pitch maybe-intervalss-motif-elements)
+  (-> Scale? pitch/c maybe-intervalss-motifs/c (non-empty-listof (or/c Note? Rest? Chord?)))
+  (let ([max-pitch-range-pair (scale->pitch-range-pair scale)])
+    (match (sequence->list (unzip maybe-intervalss-motif-elements))
+      [(list maybe-intervalss controlss durationss)
+       (let* ([maybe-pitch-or-pitchess (transpose/absolute scale max-pitch-range-pair starting-pitch maybe-intervalss)]
+              [pitch-or-pitches-motif  (sequence->list (zip maybe-pitch-or-pitchess controlss durationss))])
+         (flatten (map maybe-pitch-or-pitches-motif->motif pitch-or-pitches-motif)))])))
+
+(module+ test
+  (require rackunit)
+  (define intervals-1 '(4 5 2 -2 1 -6 -4 9 -7 6 -6 -3 1 3 -3))
+  (check-equal?
+   (render-abs-maybe-intervalss-motif C-major '(C . 0va) (map (lambda (i) (list i '() '(E))) intervals-1))
+   (list
+    (Note 'G '0va 'E '() #f)
+    (Note 'A '0va 'E '() #f)
+    (Note 'E '0va 'E '() #f)
+    (Note 'A '8vb 'E '() #f)
+    (Note 'D '0va 'E '() #f)
+    (Note 'D '8vb 'E '() #f)
+    (Note 'F '8vb 'E '() #f)
+    (Note 'E '8va 'E '() #f)
+    (Note 'C '8vb 'E '() #f)
+    (Note 'B '0va 'E '() #f)
+    (Note 'D '8vb 'E '() #f)
+    (Note 'G '8vb 'E '() #f)
+    (Note 'D '0va 'E '() #f)
+    (Note 'F '0va 'E '() #f)
+    (Note 'G '8vb 'E '() #f))))
+
+;; absolute version doesn't render FixedPitchMaybeIntervalsMotif or FixedOctaveMaybeIntervalsMotif
+;; just TupletMaybeIntervalsMotif? and maybe-interfalss-motif/c
+;; NB: TupletMaybeIntervalssMotif may contain FixedPitchMaybeIntervalsMotif or FixedOctaveMaybeIntervalsMotif
+;; which will fail contract 
+;; (-> Scale? pitch/c (or/c TupletMaybeIntervalsMotif? maybe-intervalss-motif/c) notes-motif/c)
+;; (-> Scale? pitch/c (or/c maybe-intervalss-motif/c TupletMaybeIntervalsMotif? (non-empty-listof (or/c maybe-intervalss-motif/c TupletMaybeIntervalsMotif?))) notes-motif/c)
+(define (render-abs-maybe-intervalss-motifs scale begin-pitch motif)
+  (match motif
+    [(TupletMaybeIntervalsMotif num denom dur tuplet-motif)
+     (let ([motifs (render-abs-maybe-intervalss-motif scale begin-pitch tuplet-motif)])
+       (list (Tuplet num denom dur motifs)))]
+    [(? maybe-intervalss-motif/c maybe-intervalss-motif)
+     (render-abs-maybe-intervalss-motif scale begin-pitch maybe-intervalss-motif)]
+    [(var lst)
+     (apply append (map (lambda (mot) (render-abs-maybe-intervalss-motifs scale begin-pitch mot)) lst))]))
 
 ;; (-> Scale? pitch/c weight&maybe-intervalss-motifss/c generator?)
 ;; each (maybe-intervals-motif/generator) from weight&maybe-intervalss-motifs gives

@@ -73,8 +73,8 @@
 (struct/contract Note ([pitch    pitch-class?]
                        [octave   octave?]
                        [dur      duration?]
-                       [controls (listof control/c)]
-                       [tie      boolean?])
+                       [controls (listof control/c)] 
+                      [tie      boolean?])
                  #:transparent)
 
 (struct/contract Rest ([dur duration?]) #:transparent)
@@ -160,18 +160,20 @@
                  #:transparent)
 
 (struct/contract TimeSignatureSimple ([num   natural-number/c]
-                                      [denom duration?])
+                                      [denom denom-duration?])
                  #:transparent)
 
 (define/contract (time-signature-grouping-ctor-guard groups num denom type-name)
-  (-> (listof natural-number/c) natural-number/c duration? symbol? (values (listof natural-number/c) natural-number/c duration?))
+  (-> (listof natural-number/c) natural-number/c denom-duration? symbol? (values (listof natural-number/c) natural-number/c denom-duration?))
   (if (not (eq? num (apply + groups)))
       (error type-name "sum of values in groups ~v does not equal to numerator in time signature ~v" groups num)
       (values groups num denom)))
                   
 (struct TimeSignatureGrouping (groups num denom) #:guard time-signature-grouping-ctor-guard  #:transparent)
 
-(struct/contract TimeSignatureCompound ([groups (listof (*list/c natural-number/c duration?))])
+;; (*list/c natural-number/c denom-duration?) means arbitrarily long list of natural-number/c ending with one denom-duration?
+ ;; see compoundMeter in https://lilypond.org/doc/v2.23/Documentation/notation/displaying-rhythms#polymetric-notation
+(struct/contract TimeSignatureCompound ([groups (listof (*list/c natural-number/c denom-duration?))])
                  #:transparent)
 
 (define time-signature/c
