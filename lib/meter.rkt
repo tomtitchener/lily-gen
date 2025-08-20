@@ -21,6 +21,10 @@
   ;; for the listof voice/c in the VoicesGroup
   [extend&align-voices-group-durations (-> VoicesGroup? VoicesGroup?)]
 
+  ;; clip all voices to duration at the beginning of the last measure so
+  [clip-voice-events 
+   (-> natural-number/c (listof voice-event/c) (listof voice-event/c))]
+
   ;; find the listof voice-event/c with the shortest cumulative duration,
   ;; clip all voices to duration at the beginning of the last measure so
   ;; they all end at the same measure
@@ -202,8 +206,8 @@
       [(or (KeySignature _ _) (Sempre _) (? clef?))
        (error 'replace-voice-event-durlen "unexpected voice-event ~v" voice-event)])))
 
-(define/contract (clip-voice-events total-durlen voice-events)
-  (-> natural-number/c (listof voice-event/c) (listof voice-event/c)) 
+;;  (-> natural-number/c (listof voice-event/c) (listof voice-event/c)) 
+(define (clip-voice-events total-durlen voice-events)
   (let* ([voice-events-start (take-while (sum<=? voice-event->duration-int total-durlen) voice-events)]
          [voice-events-start-len (apply + (map voice-event->duration-int voice-events-start))])
     (cond

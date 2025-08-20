@@ -5,6 +5,7 @@
 
 (require lily-gen/ws/workspace)
 (require lily-gen/lib/utils)
+(require lily-gen/lib/meter)
 (require lily-gen/lib/motifs)
 (require lily-gen/lib/score)
 (require lily-gen/lib/scale)
@@ -101,6 +102,9 @@
         'staggered-bounce-around-can-2 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (W Q Q) (W Q Q) (W Q Q) (W Q Q)))
         'staggered-bounce-around-can-3 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (W W W) (W W Q) (W W W) (W W Q)))
         'staggered-bounce-around-can-4 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (W W W) (W W Q) (W W) (W Q)))
+        'staggered-bounce-around-can-5 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (Q) (Q) (Q) (Q)))
+        'staggered-bounce-around-can-6 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (W) (W) (W) (W)))
+        'staggered-bounce-around-can-7 `((bounce-down-mot-1 bounce-up-mot ring-high-mot bounce-down-mot-2) ,C-major (C . 0va) (() (W H Q E) (W H Q E) (W H Q E) (W H Q E)))
         ))
 
 ;; - next, identify transitions and how to encode them
@@ -159,18 +163,13 @@
 ;; different loop point for each voice for changes to spread to all voices?
 
 (define (accum-rests rs)
-  (let loop ([rests rs] [accum '()] [ret '()])
-    (if (empty? rests)
-        ret
-        (let* ([next-accum (append accum (car rests))]
-               [next-ret   (append ret (list next-accum))])
-          (loop (cdr rests) next-accum next-ret)))))
-
+  (map (lambda (ls) (apply append ls)) (map (lambda (n) (take rs n)) (range 1 (add1 (length rs))))))
+  
 (define (restsyms2rests rests-syms)
   (define (rest-sym2rest sym) `(#f () ,(list sym)))
   (map rest-sym2rest rests-syms))
 
-(define (render-staggered-canon can-sym)
+#;(define (render-staggered-canon can-sym)
   (match (hash-ref staggered-canons-hash can-sym)
     [(list mot-syms scale start-pitch rests)
        (define (render-canon-mot mot)
@@ -181,14 +180,70 @@
               [rests+motss (map (lambda (rests) (append rests squeezed-mot)) restss)]
               [ext-rests+motss (map (lambda (mot) (apply append mot (make-list 20 squeezed-mot))) rests+motss)]) ;; constant!
          (let* ([notess (map render-canon-mot ext-rests+motss)]
-                [pans (voice-cnt->pan-distrib (length notess))] ;; or create new voice-cnt->pan-distrib that spreads 1 5 2 4 3
-                [ordered-pans (list (first pans) (last pans) (second pans) (fourth pans) (third pans))]
-                [voices (map (lambda (pan notes) (SplitStaffVoice (instr/param) pan notes)) ordered-pans notess)])
+                [pans (voice-cnt->staggered-pan-distrib (length notess))]
+                [voices (map (lambda (pan notes) (SplitStaffVoice (instr/param) pan notes)) pans notess)])
            (let ([name (symbol->string can-sym)])
              (parameterize ((score-title/param name) (file-name/param name))
                (gen-score-file (score/parameterized voices))))))]))
 
-;; (parameterize ((instr/param 'Marimba) (tempo/param (TempoDur 'Q 100))) (render-staggered-canon 'staggered-bounce-around-can-4))
+;; makes complement sums so all voices have same total
+;; > (sum-restss '(() (W W W) (W W W W W Q) (W W W W W Q W W) (W W W W W Q W W W Q)))
+;; '(1088 704 416 160 0)
+(define (sum-restss restss)
+  (let ([longest (last restss)])
+    (map (lambda (l) (apply + (map duration->int (drop longest (length l))))) restss)))
+
+;; motif is what gets used for filler,
+;; notes is original staggered snippet that gets added to
+;; dur is length in 128th notes to add from repeats of motif
+(define (append-notes motif notes dur)
+  (let ([motif-dur (apply + (map voice-event->duration-int motif))])
+    (let inner ([rem-dur dur]
+                [accum-notes notes])
+      (cond
+        [(zero? rem-dur)
+         accum-notes]
+        [(> rem-dur motif-dur)
+         (inner (- rem-dur motif-dur) (append accum-notes motif))]
+        [else
+         (let ([appended-notes (clip-voice-events rem-dur motif)])
+           (append accum-notes appended-notes))]))))
+
+#;(define (render-staggered-canon-2 can-sym)
+  (match (hash-ref staggered-canons-hash can-sym)
+    [(list mot-syms scale start-pitch rests)
+       (define (render-canon-mot mot)
+         (render-abs-maybe-intervalss-motifs scale start-pitch mot))
+       (let* ([mots (map (lambda (mot-sym) (hash-ref motifs-hash mot-sym)) mot-syms)]
+              [squeezed-mot (apply append (map squeeze-mot mots))]
+              [restss (map restsyms2rests (accum-rests rests))]
+              [rests+motss (map (lambda (rests) (append rests squeezed-mot)) restss)])
+         (let* ([notess (map render-canon-mot rests+motss)]
+                [pans (voice-cnt->staggered-pan-distrib (length notess))]
+                [voices (map (lambda (pan notes) (SplitStaffVoice (instr/param) pan notes)) pans notess)])
+           (let ([name (symbol->string can-sym)])
+             (parameterize ((score-title/param name) (file-name/param name))
+               (gen-score-file (score/parameterized voices))))))]))
+
+;; emit equal-length voices
+(define (render-staggered-canon can-sym)
+  (match (hash-ref staggered-canons-hash can-sym)
+    [(list mot-syms scale start-pitch rests)
+       (define (render-canon-mot mot)
+         (render-abs-maybe-intervalss-motifs scale start-pitch mot))
+       (let* ([mots (map (lambda (mot-sym) (hash-ref motifs-hash mot-sym)) mot-syms)]
+              [squeezed-mot (apply append (map squeeze-mot mots))]
+              [restss (map restsyms2rests (accum-rests rests))]
+              [rests+motss (map (lambda (rests) (append rests squeezed-mot)) restss)])
+         (let* ([notess (map render-canon-mot rests+motss)]
+                [mot-notes (render-canon-mot squeezed-mot)]
+                [sums-of-rests (sum-restss (accum-rests rests))]
+                [ext-notess (map (curry append-notes mot-notes) notess sums-of-rests)]
+                [pans (voice-cnt->staggered-pan-distrib (length ext-notess))]
+                [voices (map (lambda (pan notes) (SplitStaffVoice (instr/param) pan notes)) pans ext-notess)])
+           (let ([name (symbol->string can-sym)])
+             (parameterize ((score-title/param name) (file-name/param name))
+               (gen-score-file (score/parameterized voices))))))]))
 
 ;; (parameterize ((instr/param 'Marimba) (tempo/param (TempoDur 'Q 100)) (time-signature/param (TimeSignatureSimple 15 'E))) (render-staggered-canon 'staggered-bounce-around-can-4))
 
@@ -227,7 +282,7 @@
         [m2 (squeeze-mot (hash-ref motifs-hash mot-2))])
     (let ([ns1 (render-abs-maybe-intervalss-motifs scale start-pitch m1)]
           [ns2 (render-abs-maybe-intervalss-motifs scale start-pitch m2)])
-      (apply append (cons ns1 (blend-from-back ns1 ns2))))))
+       (apply append (cons ns1 (blend-from-back ns1 ns2))))))
 
 ;; verify gen-blend helper blends from back (without rests)
 (define (test-gen-blend scale start-pitch mot-1 mot-2)
@@ -239,21 +294,26 @@
 
 ;; (parameterize ((instr/param 'Marimba) (tempo/param (TempoDur 'Q 100))) (test-gen-blend C-major '(C . 0va) 'bounce-down-mot-1 'bounce-up-mot))
 
-;; back up to render-staggered-canon:
-;; - just repeats canon 20 times to get things going
-;; - first and last voice are separated by 8 1/2 measures,
-;;   if I start meddling with canon now, it'll take that
-;;   long for first voice to catch up
-;; - doesn't provide control at point after last voice joins
-;;   texture, finishes first statement of canon e.g. at
-;;   third eighth note in bar 11
-;; - should be possible to compute that point given durations
-;;   of canon and cumulative delays of each voice, e.g.
-;;   * 15 eighth notes for canon or one bar less an eighth
-;;   * (W W W) + (W W Q) + (W W) + (WQ) for cumulative
-;;     delay makes 8W + 2Q for 
-        
-      
+;; or use clip-voice-events
+;; - find max length to fill as max start-rests length
+;; - find length of voice-events in canon
+;; - repeat canon voice-events until cumulative length is >= max start-rests length
+;; - for each voice, call clip-voice-events with total-durlen set to the length
+;;   of rests for that voice (e.g. flipped, long to short) and repeated canons
+;; - append existing voice-events with clipped voice-events
 
-        
-    
+;; (sum-restss (accum-rests '(() (W W W) (W W Q) (W W) (W Q))))
+;; '(0 384 672 928 1088)
+
+;; reverse list to get total duration to add for each voice: '(1088 928 672 384 0)
+
+;; determine duration for one iteration of the canon, e.g. duration of first voice voice-events
+;; use (apply + (map voice-event->duration-int voice-events)) or see voice->total-durs or just
+;; steal clip-voices-durations
+
+;; determine number of repetitions of first voice voice-events to equal or exceed duration of rests
+
+;; append that count of repetitions to each voice
+
+;; clip them all to the target length, which is length of last voice, with nothing to add
+;; see clip-voice-events-at-total-durlen in meter.rkt

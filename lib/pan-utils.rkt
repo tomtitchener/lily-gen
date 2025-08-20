@@ -4,8 +4,8 @@
 
 (provide
  (contract-out
-  [voice-cnt->pan-distrib (-> exact-nonnegative-integer? (non-empty-listof pan?))])
- )
+  [voice-cnt->pan-distrib (-> exact-nonnegative-integer? (non-empty-listof pan?))]
+  [voice-cnt->staggered-pan-distrib (-> exact-nonnegative-integer? (non-empty-listof pan?))]))
 
 (require (only-in lily-gen/lib/score pan? pan-syms))
 
@@ -22,12 +22,35 @@
 
 (define pan-distrib-hash (make-hash (map cons (range 1 10) pan-distributions)))
 
+;; (1 2 3 4 5) -> (1 5 2 4 3)
+;; (1 2 3 4 5 6) -> (1 6 2 5 3 4)
+(define (bounce-ixs seq-pans)
+  (let ([l (length seq-pans)])
+    (match l
+      [0 '()]
+      [1 seq-pans]
+      [_ (cons (first seq-pans)
+               (cons (last seq-pans)
+                     (bounce-ixs (drop-right (drop seq-pans 1) 1))))])))
+
+(module+ test
+  (require rackunit)
+  (check-equal?
+   (bounce-ixs (range 1 6))
+   '(1 5 2 4 3))
+  (check-equal?
+   (bounce-ixs (range 1 7))
+   '(1 6 2 5 3 4)))
+
 (define (voice-cnt->pan-distrib cnt-voices)
-  (if (> cnt-voices (length pan-syms))
-      (let ([incr (/ 2.0 (sub1 cnt-voices))]
-            [ixs  (sequence->list (in-range 0 cnt-voices))])
-        (map (lambda (i) (+ -1 (* i incr))) ixs))
-      (hash-ref pan-distrib-hash cnt-voices)))
+  (let ([incr (/ 2.0 (sub1 cnt-voices))]
+        [ixs  (range 0 cnt-voices)])
+    (map (lambda (i) (+ -1 (* i incr))) ixs)))
+
+(define (voice-cnt->staggered-pan-distrib cnt-voices)
+  (let ([incr (/ 2.0 (sub1 cnt-voices))]
+        [ixs  (bounce-ixs (range 0 cnt-voices))])
+    (map (lambda (i) (+ -1 (* i incr))) ixs)))
 
 ;; (voice-cnt->pan-distrib-2 16)
 ;; cnt: 0.13333333333333333 ixs: '(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
