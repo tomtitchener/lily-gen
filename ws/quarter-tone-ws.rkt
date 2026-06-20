@@ -303,13 +303,6 @@
 ;; - first review motifs.rkt, which already approaches a lot of these ideas, then break it down to smaller pieces
 ;;
 
-;; Just to get started from somewhere, consider weighted-maybe-intervalss-motifs/generator, where I supply a list
-;; of motifs, probably FixedPitchMaybeIntervalsMotif and TupletMaybeIntervalsMotif
-;;
-;; Then spread those over a list of solo voices with short, quiet motifs, varying lengths and preceding and following
-;; rests and then tackle swells in second chorus (note: I believe FixedPitch motifs won't transpose successively)
-;;
-
 ;; first the flute starting at C an octave above middle C, these are to be randomly sequenced by weight
 ;; all will use "Scale" of last octave of overtone series, range of voice is two octaves
 
@@ -339,24 +332,18 @@
                         '(2  (SlurOff)        (S))
                         '(#f ()               (Q))))
 
-(define (mur-mots start)
-  (list (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints1))
-        (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints2))
-        (list 1 (FixedPitchMaybeIntervalsMotif start mur-ints3))))
-
-(define mur-mots-hi (mur-mots '(C . 8va)))
-
-(define mur-mots-med (mur-mots '(G . 0va)))
-
-(define mur-mots-lo (mur-mots '(D . 0va)))
+(define mur-mots
+  (list (list 1 mur-ints1)
+        (list 1 mur-ints2)
+        (list 1 mur-ints3)))
 
 (define top-octave-scale (Scale  (take (drop (map car (make-harmonic-pitches 'C '15vb)) 7) 8)))
 
-(define mur-mots-hi/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 8va) mur-mots-hi))
+(define mur-mots-hi/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 8va) mur-mots))
   
-(define mur-mots-med/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(G . 0va) mur-mots-med))
+(define mur-mots-med/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(G . 0va) mur-mots))
 
-(define mur-mots-lo/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 0va) mur-mots-lo))
+(define mur-mots-lo/g (weighted-maybe-intervalss-motifs/generator top-octave-scale '(C . 0va) mur-mots))
 
 (define length<=? (lambda (m) (sum<=? (lambda (_) 1) m)))
 

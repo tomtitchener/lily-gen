@@ -42,5 +42,11 @@ generators.rkt> (random)
 generators.rkt> (random)
 0.13014560823102633
 
+How did Bittersweet work - generate a lot of music with a small amount of code.
 
-   
+A rich texture with a primary and a derived choir.
+
+A simple progression to grow the texture incrementally in successive transform of widening arcs, especially toward the treble.
+
+A two-part overall frame with a variation on the initial core showing different rhythms in the second half, with mixes of 2s and 3s.
+

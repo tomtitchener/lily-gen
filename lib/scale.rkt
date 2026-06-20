@@ -92,6 +92,8 @@
   ;; guard range by min max relative range [0..(scale->max-idx scale)] but possibly narrower
   ;; note: regular arithmetic so 0 is the same as unison, 1 is the same as a second, 2 is a third, etc.
   [xpose (-> Scale? pitch-range-pair/c pitch/c exact-integer? maybe-pitch/c)]
+
+  [transpose/unguarded (-> Scale? pitch/c pitch-range-pair/c maybe-interval-or-intervals/c maybe-pitch-or-pitches/c)]
  
   ;; transpose from the starting pitch using the list of maybe-interval/c to transpose
   ;; the result of the previous step, e.g. (1 1 1 ...) for a step-by-step progression
@@ -167,12 +169,11 @@
   (make-flat-contract #:name 'maybe-interval/c #:first-order (or/c interval/c false/c)))
 
 (define maybe-intervals/c
-  (make-flat-contract #:name 'maybe-intervals/c #:first-order (or/c (non-empty-listof interval/c) false/c)))
-
+  (make-flat-contract #:name 'maybe-intervals/c #:first-order (or/c intervals/c false/c)))
 
 ;; interval/c => Note, (non-empty-listof interval/c) => Chord, false/c => Rest
 (define maybe-interval-or-intervals/c
-  (make-flat-contract #:name 'maybe-interval-or-intervals/c #:first-order (or/c interval/c (non-empty-listof interval/c) false/c)))
+  (make-flat-contract #:name 'maybe-interval-or-intervals/c #:first-order (or/c interval/c intervals/c false/c)))
 
 (define maybe-interval-or-intervalss/c
   (make-flat-contract #:name 'maybe-interval-or-intervalss/c #:first-order (non-empty-listof maybe-interval-or-intervals/c)))
@@ -577,19 +578,16 @@
 ;; pitch and pitch-range-pair already guarded for scale, so
 ;; xpose, then answer either xposed-pitch or #f if xposed-pitch is not in range
 ;; inputs #f, interval, list of intervals for maybe-interval-or-intervals
-(define/contract (transpose/unguarded scale pitch pitch-range-pair maybe-interval-or-intervals)
-  (-> Scale? pitch/c pitch-range-pair/c maybe-interval-or-intervals/c maybe-pitch-or-pitches/c)
+;; (-> Scale? pitch/c pitch-range-pair/c maybe-interval-or-intervals/c maybe-pitch-or-pitches/c)
+(define (transpose/unguarded scale pitch pitch-range-pair maybe-interval-or-intervals)
   #;(printf "transpose/unguarded pitch ~v maybe-interval-or-intervals ~v\n" pitch maybe-interval-or-intervals)
   (match maybe-interval-or-intervals
     [#f ;; input is #f so output #f is interpreted as a rest
      #;(printf "#f\n")
      #f]
     ;; check list before cons
-    [(list first-interval rest-intervals ...) ;; input is chord, xpose root, then rest of chord from root
-     (let* ([root (transpose/unguarded scale pitch pitch-range-pair first-interval)]
-            [chord (cons root (map (curry transpose/unguarded scale root pitch-range-pair) rest-intervals))])
-       #;(printf "first-interval: ~v rest-intervals: ~v\n" first-interval rest-intervals)
-       #;(printf "root: ~v chord: ~v\n" root chord)
+    [(list first-interval rest-intervals ...)
+     (let* ([chord (map (curry transpose/unguarded scale pitch pitch-range-pair) maybe-interval-or-intervals)])
        chord)]
     [(cons interval accidental) ;; contract guarantees (cons interval/c accidental?)
      (let ([pitch (transpose/unguarded scale pitch pitch-range-pair interval)])

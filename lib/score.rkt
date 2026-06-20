@@ -104,7 +104,7 @@
       [(not (integer? tot-dur))
        (error type-name "tot-dur: ~v (* (/ notes dur: ~v num: ~v) denom: ~v) is not an integer" tot-dur tup-notes-dur num denom)]
       [(not (integer? (/ tot-dur tup-dur-int)))
-       (error type-name "tot-dur: ~v / tuplet-dur: ~v is not an integer: ~v" tot-dur tup-dur-int (/ tot-dur tup-dur))]
+       (error type-name "tot-dur: ~v / tuplet-dur: ~v is not an integer: ~v" tot-dur tup-dur-int (/ tot-dur tup-dur-int))]
       [else
        (void)])))
 

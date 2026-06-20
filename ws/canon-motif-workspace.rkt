@@ -1,3 +1,4 @@
+
 #lang racket
 
 ;; canon-workspace.rkt:  ressurrect canon texture
@@ -225,6 +226,49 @@
              (parameterize ((score-title/param name) (file-name/param name))
                (gen-score-file (score/parameterized voices))))))]))
 
+;; rethink this:  list of list of rests leaves rotations jumbled, reformat
+;; as list of list of rotations with some indicator meaning to delay, or a
+;; list of pairs with first pair being a count of rotations to wait and the
+;; second being the numbe of note events to rotate
+;;
+;; ugh, that means always starting at the beginning of the motif in the first
+;; voice and never at the beginning of the motif for any of the later voices
+;; would be nicer to stagger starts as with rest delays but at exact note in
+;; lead voice, that way ending at a note in the lead voice matches up across
+;; other voices
+;;
+;; but not really, as rests or different durations could mean clipping
+;;
+;; what are my goals?
+;; - to have a staggered entrance like a canon, voices starting the same
+;;   playing one instance of the canon
+;; - fill in the texture of voices 1..(n - 1)
+;; - at the start of the second repetition of the canon in the last voice
+;;   being able to determine what element of the canon starts in all the
+;;   other voices so I can regain the rotated canon texture for subsequent
+;;   manipulations of the canon
+;;
+;; as it turns out, my rest based implementation combined with the uniform
+;; short durations make this possible:  the fourth voice starts on the 19th
+;; note, the third on the 20th, the second on the 5th, the 1st on the 11th
+;; the logic to extend and truncate in append-notes leaves a clean finish,
+;; and capturing the offset is just a question of counting back, note/rest
+;; by note/rest from the last note to the start of the pattern
+;;
+;; assuming end is clean, starting with list of canon notes in order length N,
+;; - take N notes backward from end of voice
+;; - does sample match canon?
+;;   yes - answer number of iterations for rotation, starting at 0
+;;   no  - rotate sample canon and repeat, counting iterations
+;;
+;; in the event append-notes has truncated a duration, there'll be a
+;; comparison where all notes are identical excapt for the last, which
+;; will be shorter than the pattern, so to preserve the canon, swap
+;; the last note with the longer one back in -- 
+;;
+;; `
+;;
+
 ;; emit equal-length voices
 (define (render-staggered-canon can-sym)
   (match (hash-ref staggered-canons-hash can-sym)
@@ -317,3 +361,14 @@
 
 ;; clip them all to the target length, which is length of last voice, with nothing to add
 ;; see clip-voice-events-at-total-durlen in meter.rkt
+
+;; consider bittersweet:
+;; - texture with extremely slow extracted rhythms vs. fast surface rhythms is only one possibility.
+;;   * could start with shorter segments interspersed with rests in independent voices, given the
+;;     constant texture of sixteenths, say even eights, gradually lengthening with rests progressing
+;;     from longer to shorter
+;; - texture with all sustained voices moving in chorus simultaneously is only possibility.
+;;   * start independent, coalesce in groups say 2 + 3, then 5 all at once
+
+
+;; 

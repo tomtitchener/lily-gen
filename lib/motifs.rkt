@@ -1,4 +1,4 @@
-#lang racket
+o#lang racket
 
 ;; motifs: structs and contracts
 ;; data types and contracts for motifs vary by
@@ -93,7 +93,7 @@
   ;; but historically the name for a single step up and down is a second and the name for identity
   ;; as in 1 with respect to multiplication is unison, so it's easier when writing down an interval
   ;; series to use 2, 3, 4, etc. for second, third, fourth etc.
-  ;; this routine squeees the traditional terms down so e.g. -1/1 becomes 0, 2,3.. become 1,2..,
+  ;; this routine squeezes the traditional terms down so e.g. -1/1 becomes 0, 2,3.. become 1,2..,
   ;; and -2,-3.. become -1,-2..
   ;; note maybe-interval-or-intervalss/c includes #f for rests and a sub-list for chords, so it
   ;; handles those, too
