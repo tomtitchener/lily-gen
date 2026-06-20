@@ -1,4 +1,4 @@
-o#lang racket
+#lang racket
 
 ;; motifs: structs and contracts
 ;; data types and contracts for motifs vary by
